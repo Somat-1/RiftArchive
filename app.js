@@ -58,12 +58,11 @@ const activeTypes=new Set(),activeDomains=new Set();
 async function loadCollection(){
   const status=$('#loadStatus');
   try{
-    const response=await fetch('cards.json',{cache:'no-store'});
-    if(!response.ok)throw new Error('HTTP '+response.status);
-    const database=await response.json();
+    let database;
+    try{const response=await fetch('api.php?action=collection',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json();if(!Array.isArray(database.cards))throw new Error('Invalid collection')}catch(serverError){const response=await fetch('cards.json',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json()}
     const draft=localStorage.getItem('riftarchive_admin_draft');
     cards=draft?JSON.parse(draft).cards:database.cards;
-    status.textContent=draft?'Local admin draft':'Collection database';
+    status.textContent=draft?'Local admin draft':'Published collection';
     status.classList.add('ready');
     initialize();
   }catch(error){
@@ -117,7 +116,7 @@ function getFiltered(){
 }
 
 function variantLabel(card){return card.version?.label||'Standard'}
-function details(card){return `${flag(card.language)} ${esc(languageName(card.language))} · ${esc(variantLabel(card))}${card.foil?' · Foil':''}`}
+function details(card){const grading=card.grading?.company?[card.grading.company,card.grading.value,card.grading.label].filter(Boolean).join(' '):'';return `${flag(card.language)} ${esc(languageName(card.language))} · ${esc(variantLabel(card))}${card.foil?' · Foil':''}${card.condition?' · '+esc(card.condition):''}${grading?' · '+esc(grading):''}${card.notes?' · '+esc(card.notes):''}`}
 
 function cardMarkup(card){
   const landscape=card.orientation==='landscape'?' landscape':'';

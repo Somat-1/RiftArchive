@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 744 1039" role="img" aria-labelledby="title description">
+  <title id="title">Card image unavailable</title>
+  <desc id="description">A decorative placeholder for a card missing from the external catalog.</desc>
+  <defs><radialGradient id="background" cx="25%" cy="10%" r="100%"><stop offset="0" stop-color="#315f50"/><stop offset=".55" stop-color="#173f35"/><stop offset="1" stop-color="#0d211a"/></radialGradient></defs>
+  <rect width="744" height="1039" rx="42" fill="url(#background)"/>
+  <rect x="30" y="30" width="684" height="979" rx="30" fill="none" stroke="#d9a441" stroke-width="5" opacity=".72"/>
+  <circle cx="372" cy="420" r="118" fill="none" stroke="#e9c66f" stroke-width="7" opacity=".78"/>
+  <path d="M372 331 443 420 372 509 301 420Z" fill="none" stroke="#e9c66f" stroke-width="7" opacity=".78"/>
+  <text x="372" y="630" fill="#f7f2df" text-anchor="middle" font-family="Georgia,serif" font-size="42">RIFTBOUND ARCHIVE</text>
+  <text x="372" y="684" fill="#a9c0b7" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" letter-spacing="3">IMAGE UNAVAILABLE</text>
+</svg>

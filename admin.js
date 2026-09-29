@@ -1,4 +1,5 @@
 const API='https://api.riftcodex.com';
+const CATALOG_CACHE_KEY='riftarchive_catalog_cache_v1';
 const LANGUAGES={en:['English','GB'],fr:['French','FR'],de:['German','DE'],es:['Spanish','ES'],it:['Italian','IT'],pt:['Portuguese','PT'],pl:['Polish','PL'],ja:['Japanese','JP'],ko:['Korean','KR'],zh:['Chinese','CN']};
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -8,15 +9,23 @@ const flag=language=>{const cc=(LANGUAGES[language]||LANGUAGES.en)[1];return [..
 const clone=value=>JSON.parse(JSON.stringify(value));
 const baseName=name=>String(name).replace(/\s*\((?:alternate art|overnumbered|signature|metal)\)\s*$/i,'').trim();
 const displayName=name=>baseName(name).replace(/\s+-\s+/g,', ');
+const languageCode=value=>{const normalized=normalize(value);return Object.entries(LANGUAGES).find(([code,data])=>normalize(code)===normalized||normalize(data[0])===normalized)?.[0]||'en'};
 
 let database=null,originalCards=[],workingCards=[],catalog=[],catalogReady=false;
-let sessionLog=[],searchTimer=null,currentEditor=null,allocations=[],importQueue=[],importCompleted=0;
+let sessionLog=[],searchTimer=null,currentEditor=null,allocations=[],importQueue=[],importCompleted=0,pendingCsvImport=false,csvImportRunning=false,lastImportedCsvText=null,catalogLoading=false;
 
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2400)}
 
-$('#loginForm').addEventListener('submit',event=>{event.preventDefault();if($('#adminPassword').value==='123'){sessionStorage.setItem('riftarchive_admin','yes');unlock()}else{$('#loginError').textContent='Incorrect password'}});
-$('#lockAdmin').addEventListener('click',()=>{sessionStorage.removeItem('riftarchive_admin');location.reload()});
-if(sessionStorage.getItem('riftarchive_admin')==='yes')unlock();
+$('#loginForm').addEventListener('submit',async event=>{
+  event.preventDefault();const password=$('#adminPassword').value.trim(),error=$('#loginError');error.textContent='Checking…';
+  try{const response=await fetch('api.php?action=login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});if(!response.ok)throw new Error(response.status===401?'Incorrect password':'Login service unavailable');sessionStorage.setItem('riftarchive_admin','yes');error.textContent='';unlock()}catch(loginError){error.textContent=loginError.message}
+});
+$('#lockAdmin').addEventListener('click',async()=>{try{await fetch('api.php?action=logout',{method:'POST'})}catch(error){}sessionStorage.removeItem('riftarchive_admin');location.reload()});
+restoreAdminSession();
+async function restoreAdminSession(){
+  if(sessionStorage.getItem('riftarchive_admin')!=='yes')return;
+  try{const response=await fetch('api.php?action=session',{cache:'no-store'}),state=await response.json();if(state.authenticated)unlock();else sessionStorage.removeItem('riftarchive_admin')}catch(error){sessionStorage.removeItem('riftarchive_admin')}
+}
 
 async function unlock(){
   $('#loginGate').hidden=true;$('#adminShell').hidden=false;
@@ -26,9 +35,8 @@ async function unlock(){
 
 async function loadDatabase(){
   try{
-    const response=await fetch('cards.json',{cache:'no-store'});
-    if(!response.ok)throw new Error('HTTP '+response.status);
-    database=await response.json();originalCards=clone(database.cards);
+    try{const response=await fetch('api.php?action=collection',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json();if(!Array.isArray(database.cards))throw new Error('Invalid collection')}catch(serverError){const response=await fetch('cards.json',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json()}
+    originalCards=clone(database.cards);
     const draft=localStorage.getItem('riftarchive_admin_draft');
     workingCards=draft?JSON.parse(draft).cards:clone(originalCards);
     updateWorkingUI();$('#catalogStatus').textContent=draft?'Working from saved browser draft':'Collection loaded · loading Riftcodex catalog';
@@ -36,15 +44,38 @@ async function loadDatabase(){
 }
 
 async function loadCatalog(){
+  if(catalogLoading)return;catalogLoading=true;
   try{
-    const first=await fetch(`${API}/cards?size=100&page=1&sort=name`).then(checkResponse).then(r=>r.json());
-    const requests=[];for(let page=2;page<=first.pages;page++)requests.push(fetch(`${API}/cards?size=100&page=${page}&sort=name`).then(checkResponse).then(r=>r.json()));
-    const rest=await Promise.all(requests),all=[...first.items,...rest.flatMap(page=>page.items)],seen=new Set();
-    catalog=all.filter(card=>{const key=card.riftbound_id||card.id;if(seen.has(key))return false;seen.add(key);return true});
-    catalogReady=true;$('.catalog-status').classList.add('ready');$('#catalogStatus').textContent=`Riftcodex ready · ${catalog.length} printings`;
-  }catch(error){$('.catalog-status').classList.add('error');$('#catalogStatus').textContent='Riftcodex catalog unavailable';console.error(error)}
+    const cached=JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY));
+    if(Array.isArray(cached?.cards)&&cached.cards.length){catalog=cached.cards;catalogReady=true;$('.catalog-status').classList.add('ready');$('#catalogStatus').textContent=`Riftcodex cache ready · ${catalog.length} printings`}
+  }catch(error){localStorage.removeItem(CATALOG_CACHE_KEY)}
+  try{
+    let all;
+    try{
+      const local=await fetchJson('api.php?action=catalog');
+      if(!Array.isArray(local.items)||!local.items.length)throw new Error('Empty local catalog');
+      all=local.items;
+    }catch(proxyError){
+      console.warn('Local catalog proxy unavailable; trying bundled snapshot',proxyError);
+      try{
+        const snapshot=await fetchJson('catalog.json');
+        if(!Array.isArray(snapshot.items)||!snapshot.items.length)throw new Error('Empty catalog snapshot');
+        all=snapshot.items;
+      }catch(snapshotError){
+        console.warn('Bundled catalog unavailable; trying Riftcodex directly',snapshotError);
+        const first=await fetchJson(`${API}/cards?size=100&page=1&sort=name`);
+        const requests=[];for(let page=2;page<=first.pages;page++)requests.push(fetchJson(`${API}/cards?size=100&page=${page}&sort=name`));
+        const rest=await Promise.all(requests);all=[...first.items,...rest.flatMap(page=>page.items)];
+      }
+    }
+    const seen=new Set();
+    catalog=all.filter(card=>{const key=card.riftbound_id||card.id;if(seen.has(key))return false;seen.add(key);return true}).map(card=>({name:card.name,riftbound_id:card.riftbound_id||card.id,collector_number:card.collector_number,classification:card.classification,set:card.set,attributes:card.attributes,media:{image_url:card.media?.image_url},metadata:card.metadata,orientation:card.orientation}));
+    catalogReady=true;try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.stringify({savedAt:Date.now(),cards:catalog}))}catch(cacheError){console.warn('Could not cache Riftcodex catalog',cacheError)}$('.catalog-status').classList.add('ready');$('#catalogStatus').textContent=`Riftcodex ready · ${catalog.length} printings`;
+  }catch(error){if(!catalogReady){$('.catalog-status').classList.add('error');$('#catalogStatus').textContent='Riftcodex catalog unavailable · CSV import is waiting';$('#importStatus').textContent='The card catalog could not be loaded. Keep this page open and try Import cards again.'}console.error(error)}
+  catalogLoading=false;if(catalogReady&&pendingCsvImport)importCollectionCsv($('#importInput').value);
 }
 function checkResponse(response){if(!response.ok)throw new Error('HTTP '+response.status);return response}
+async function fetchJson(url){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);try{return await fetch(url,{signal:controller.signal}).then(checkResponse).then(response=>response.json())}finally{clearTimeout(timer)}}
 
 function updateWorkingUI(){
   $('#workingTotal').textContent=workingCards.reduce((sum,c)=>sum+Number(c.quantity||0),0);
@@ -76,11 +107,12 @@ function versionOption(card){return `${versionLabel(card)} · ${card.set.set_id}
 
 function openEditor(options){
   currentEditor=options;const versions=options.versions,first=preferredVersion(versions),existing=options.existing;
-  allocations=existing?[{versionId:existing.riftbound_id,quantity:existing.quantity,language:existing.language||'en',english:(existing.language||'en')==='en',foil:Boolean(existing.foil)}]:[{versionId:first.riftbound_id,quantity:options.requested||1,language:'fr',english:true,foil:false}];
+  allocations=options.initialAllocations?clone(options.initialAllocations):existing?[{versionId:existing.riftbound_id,quantity:existing.quantity,language:existing.language||'en',english:(existing.language||'en')==='en',foil:Boolean(existing.foil)}]:[{versionId:first.riftbound_id,quantity:options.requested||1,language:'fr',english:true,foil:false}];
   $('#requestedTotal').value=options.requested||existing?.quantity||1;
   $('#variantTitle').textContent=displayName(first.name);
   $('#variantStep').textContent=options.fromImport?`Import ${importCompleted+1} of ${importCompleted+importQueue.length+1}`:existing?'Edit inventory record':'Configure inventory';
-  $('#variantHint').textContent=`${versions.length} printing${versions.length===1?'':'s'} available · quantities can be split`;
+  const imported=options.inventoryMetadata,importDetails=imported?[imported.condition,imported.grading?.company&&`Graded by ${imported.grading.company}`,imported.notes].filter(Boolean).join(' · '):'';
+  $('#variantHint').textContent=`${versions.length} printing${versions.length===1?'':'s'} available · quantities can be split${importDetails?' · '+importDetails:''}`;
   $('#selectedCard').innerHTML=`<img src="${esc(first.media.image_url)}" alt=""><div><strong>${esc(displayName(first.name))}</strong><small>${esc(first.set.label)} · ${esc((first.classification.domain||[]).join(' / '))}</small></div>`;
   $('#saveVariant').textContent=existing?'Save changes':options.fromImport?'Save and review next':'Add to working copy';
   renderAllocations();$('#variantModal').hidden=false;
@@ -110,9 +142,10 @@ $('#addSplit').addEventListener('click',()=>{if(allocations[0].quantity>1)alloca
 $('#closeVariant').addEventListener('click',cancelEditor);$('#cancelVariant').addEventListener('click',cancelEditor);
 function cancelEditor(){const continuing=currentEditor?.fromImport;$('#variantModal').hidden=true;currentEditor=null;if(continuing)openNextImport()}
 
-function inventoryFromApi(card,allocation,suffix){
-  const language=allocation.english?'en':allocation.language,version=versionLabel(card);
-  return{collection_id:`${card.riftbound_id}-${language}-${normalize(version).replaceAll(' ','-')}-${allocation.foil?'foil':'nf'}-${Date.now()}-${suffix}`,name:displayName(card.name),quantity:Number(allocation.quantity),riftbound_id:card.riftbound_id,type:card.classification.type,rarity:card.classification.rarity,domains:[...new Set(card.classification.domain||[])],set:{id:card.set.set_id,label:card.set.label},attributes:card.attributes||{energy:null,might:null,power:null},image_url:card.media.image_url,orientation:card.orientation||'portrait',version:{label:version,alternate_art:Boolean(card.metadata?.alternate_art),overnumbered:Boolean(card.metadata?.overnumbered),signature:Boolean(card.metadata?.signature)},foil:Boolean(allocation.foil),language};
+function inventoryFromApi(card,allocation,suffix,inventoryMetadata){
+  const language=allocation.english?'en':allocation.language,importedLabel=inventoryMetadata?.importReference?.variant_label,version=importedLabel&&normalize(importedLabel)!=='standard'?importedLabel:versionLabel(card);
+  const record={collection_id:`${card.riftbound_id}-${language}-${normalize(version).replaceAll(' ','-')}-${allocation.foil?'foil':'nf'}-${Date.now()}-${suffix}`,name:displayName(card.name),quantity:Number(allocation.quantity),riftbound_id:card.riftbound_id,type:card.classification.type,rarity:card.classification.rarity,domains:[...new Set(card.classification.domain||[])],set:{id:card.set.set_id,label:card.set.label},attributes:card.attributes||{energy:null,might:null,power:null},image_url:card.media.image_url,orientation:card.orientation||'portrait',version:{label:version,alternate_art:Boolean(card.metadata?.alternate_art),overnumbered:Boolean(card.metadata?.overnumbered),signature:Boolean(card.metadata?.signature)},foil:Boolean(allocation.foil),language};
+  return inventoryMetadata?{...record,condition:inventoryMetadata.condition||null,grading:inventoryMetadata.grading||null,notes:inventoryMetadata.notes||null,import_reference:inventoryMetadata.importReference||null}:record;
 }
 
 $('#saveVariant').addEventListener('click',()=>{
@@ -120,7 +153,8 @@ $('#saveVariant').addEventListener('click',()=>{
   const existing=currentEditor.existing,wasImport=currentEditor.fromImport;
   if(existing){const index=workingCards.findIndex(card=>card.collection_id===existing.collection_id);if(index>=0)workingCards.splice(index,1)}
   const added=allocations.map((allocation,index)=>{
-    const card=inventoryFromApi(currentEditor.versions.find(card=>card.riftbound_id===allocation.versionId),allocation,index);
+    const metadata=currentEditor.inventoryMetadata||existing&&{condition:existing.condition,grading:existing.grading,notes:existing.notes,importReference:existing.import_reference};
+    const card=inventoryFromApi(currentEditor.versions.find(card=>card.riftbound_id===allocation.versionId),allocation,index,metadata);
     // Keep the first record's stable ID while editing so older session entries remain clickable.
     if(existing&&index===0)card.collection_id=existing.collection_id;
     return card;
@@ -136,19 +170,84 @@ function parseImport(text){
   text.split(/\r?\n/).forEach(raw=>{const line=raw.trim();if(!line||/^[^\d]+:\s*$/.test(line))return;const match=line.match(/^(\d+)\s*[x×]?\s+(.+)$/i);if(!match)return;const name=match[2].trim(),key=normalize(name);if(!grouped.has(key))grouped.set(key,{name,quantity:0});grouped.get(key).quantity+=Number(match[1])});
   return[...grouped.values()];
 }
+
+function parseCsv(text){
+  const rows=[];let row=[],field='',quoted=false;
+  for(let index=0;index<text.length;index++){
+    const character=text[index];
+    if(quoted){if(character==='"'&&text[index+1]==='"'){field+='"';index++}else if(character==='"')quoted=false;else field+=character;continue}
+    if(character==='"'){quoted=true;continue}
+    if(character===','){row.push(field);field='';continue}
+    if(character==='\n'){row.push(field);if(row.some(value=>value.trim()))rows.push(row);row=[];field='';continue}
+    if(character!=='\r')field+=character;
+  }
+  row.push(field);if(row.some(value=>value.trim()))rows.push(row);
+  if(!rows.length)return[];
+  const headers=rows.shift().map((header,index)=>(index===0?header.replace(/^\uFEFF/,''):header).trim());
+  return rows.map(values=>Object.fromEntries(headers.map((header,index)=>[header,(values[index]||'').trim()])));
+}
+
+function isCollectionCsv(text){return /^\s*(?:\uFEFF)?Variant Number\s*,\s*Card Name\s*,/i.test(text)}
+function csvImportItems(text){
+  return parseCsv(text).map((row,index)=>{
+    const quantity=Math.max(1,Number.parseInt(row.Quantity,10)||1),language=languageCode(row.Language),grading=[row['Grading Company'],row['Grading Value'],row['Grading Label']].some(Boolean)?{company:row['Grading Company']||null,value:row['Grading Value']||null,label:row['Grading Label']||null}:null,nexusNight=/-Nexus$/i.test(row['Variant Number'])||/-NN$/i.test(row['Set Prefix']),notes=[row.Notes,nexusNight?`Nexus Night ×${quantity}`:''].filter(Boolean).join(' · ')||null;
+    return{name:row['Card Name'],quantity,variantNumber:row['Variant Number'],setPrefix:row['Set Prefix'],setName:row.Set,rarity:row.Rarity,foil:String(row.Foil).toLowerCase()==='true',language,sourceRow:index+2,inventoryMetadata:{condition:row.Condition||null,grading,notes,importReference:{variant_number:row['Variant Number']||null,variant_type:row['Variant Type']||null,variant_label:row['Variant Label']||null}}};
+  }).filter(item=>item.name&&item.variantNumber);
+}
+function collectorKey(value){const raw=String(value??'').trim().toUpperCase();return /^\d+$/.test(raw)?String(Number(raw)):raw.replace(/^0+(?=\d)/,'')}
+function csvVersions(item){
+  const [numberPrefix,...numberParts]=item.variantNumber.split('-'),prefixes=[item.setPrefix,numberPrefix].filter(Boolean).map(value=>value.toUpperCase()),collector=collectorKey(numberParts[0]);
+  const exact=catalog.filter(card=>prefixes.includes(String(card.set?.set_id||'').toUpperCase())&&collectorKey(card.collector_number)===collector);
+  if(exact.length)return exact;
+  return catalog.filter(card=>normalize(baseName(card.name))===normalize(item.name)&&(!prefixes.length||prefixes.includes(String(card.set?.set_id||'').toUpperCase())));
+}
+function inventoryFromCsvFallback(item,index){
+  const reference=item.inventoryMetadata.importReference,version=reference.variant_label||reference.variant_type||'Standard',language=item.language||'en',setId=(item.variantNumber.split('-')[0]||item.setPrefix||'').toUpperCase();
+  return{collection_id:`${normalize(item.variantNumber)}-${language}-${normalize(version)}-${item.foil?'foil':'nf'}-${Date.now()}-${index}`,name:item.name,quantity:item.quantity,riftbound_id:item.variantNumber.toLowerCase(),type:/-[Tt]\d+/.test(item.variantNumber)?'Token':'Card',rarity:item.rarity||'Unknown',domains:[],set:{id:setId,label:item.setName||setId},attributes:{energy:null,might:null,power:null},image_url:'card-placeholder.svg',orientation:'portrait',version:{label:version,alternate_art:false,overnumbered:false,signature:false},foil:item.foil,language,condition:item.inventoryMetadata.condition||null,grading:item.inventoryMetadata.grading||null,notes:item.inventoryMetadata.notes||null,import_reference:reference};
+}
+
+$('#importFile').addEventListener('change',async event=>{
+  const file=event.target.files[0];if(!file)return;
+  $('#importFileName').textContent=file.name;
+  $('#importInput').value=await file.text();
+  pendingCsvImport=isCollectionCsv($('#importInput').value);
+  $('#importStatus').textContent=pendingCsvImport?`Loaded ${file.name} · ${catalogReady?'importing now':'waiting for the card catalog'}`:`Loaded ${file.name} · click Import cards to continue`;
+  if(pendingCsvImport&&catalogReady)importCollectionCsv($('#importInput').value);
+});
 $('#analyzeImport').addEventListener('click',()=>{
-  if(!catalogReady){toast('Wait for the Riftcodex catalog to finish loading');return}
-  const items=parseImport($('#importInput').value),missing=[];importQueue=[];
+  const text=$('#importInput').value,csv=isCollectionCsv(text);
+  if(!text.trim()){$('#importStatus').textContent='Choose a CSV or paste a card list first.';return}
+  if(!catalogReady){pendingCsvImport=csv;$('#importStatus').textContent='Waiting for the Riftcodex card catalog. The import will start automatically when it is ready.';loadCatalog();return}
+  if(csv){importCollectionCsv(text);return}
+  const items=parseImport(text),missing=[];importQueue=[];
   items.forEach(item=>{const versions=catalog.filter(card=>normalize(baseName(card.name))===normalize(item.name));versions.length?importQueue.push({...item,versions}):missing.push(item.name)});
   importCompleted=0;$('#importStatus').textContent=`${importQueue.length} cards ready for review${missing.length?' · Not found: '+missing.join(', '):''}`;
   openNextImport();
 });
-function openNextImport(){if(!importQueue.length){if(importCompleted)toast(`Import review complete · ${importCompleted} cards configured`);return}const item=importQueue.shift();openEditor({versions:item.versions,requested:item.quantity,mode:'add',fromImport:true})}
-$('#clearImport').addEventListener('click',()=>{$('#importInput').value='';$('#importStatus').textContent='';importQueue=[]});
+function importCollectionCsv(text){
+  if(csvImportRunning)return;
+  if(text===lastImportedCsvText){$('#importStatus').textContent='This CSV has already been imported into the current working copy. Clear it before importing again.';return}
+  csvImportRunning=true;pendingCsvImport=false;
+  try{
+    const items=csvImportItems(text),fallback=[],added=[];
+    items.forEach((item,index)=>{
+      const versions=csvVersions(item),selected=versions.find(card=>normalize(baseName(card.name))===normalize(item.name))||versions[0];
+      if(!selected){fallback.push(`${item.variantNumber} ${item.name}`);added.push(inventoryFromCsvFallback(item,index));return}
+      added.push(inventoryFromApi(selected,{versionId:selected.riftbound_id,quantity:item.quantity,language:item.language,english:item.language==='en',foil:item.foil},index,item.inventoryMetadata));
+    });
+    workingCards.push(...added);added.forEach(card=>sessionLog.unshift({action:'added',collectionId:card.collection_id,name:card.name}));lastImportedCsvText=text;
+    localStorage.setItem('riftarchive_admin_draft',JSON.stringify({...database,cards:workingCards}));updateWorkingUI();
+    const copies=added.reduce((sum,card)=>sum+card.quantity,0),fallbackPreview=fallback.slice(0,6).join(', ');
+    $('#importStatus').textContent=`Imported ${added.length} inventory rows · ${copies} cards · browser draft saved${fallback.length?` · ${fallback.length} catalog-missing cards used placeholders: ${fallbackPreview}${fallback.length>6?'…':''}`:''}`;
+    toast(`Imported ${copies} cards into the working copy`);
+  }catch(error){$('#importStatus').textContent=`CSV import failed: ${error.message}`;console.error(error)}finally{csvImportRunning=false}
+}
+function openNextImport(){if(!importQueue.length){if(importCompleted)toast(`Import review complete · ${importCompleted} cards configured`);return}const item=importQueue.shift();openEditor({versions:item.versions,requested:item.quantity,mode:'add',fromImport:true,initialAllocations:item.initialAllocations,inventoryMetadata:item.inventoryMetadata})}
+$('#clearImport').addEventListener('click',()=>{$('#importInput').value='';$('#importFile').value='';$('#importFileName').textContent='No file selected';$('#importStatus').textContent='';importQueue=[];pendingCsvImport=false;lastImportedCsvText=null});
 
 function renderManage(){
   const host=$('#manageList');if(!host)return;const query=normalize($('#manageSearch').value),items=workingCards.filter(card=>!query||normalize(card.name).includes(query)).sort((a,b)=>a.name.localeCompare(b.name));
-  host.innerHTML=items.length?items.slice(0,250).map(card=>`<div class="manage-row"><img src="${esc(card.image_url)}" alt=""><div class="manage-name"><strong>${esc(card.name)}</strong><small>${flag(card.language)} ${esc(card.version?.label||'Standard')}${card.foil?' · Foil':''}</small></div><span>${esc(card.set?.id)} · ${esc(card.type)}</span><strong>×${card.quantity}</strong><span><button data-edit="${esc(card.collection_id)}">Edit</button> <button class="remove" data-remove-card="${esc(card.collection_id)}">Remove</button></span></div>`).join(''):'<div class="admin-empty">No matching inventory records.</div>';
+  host.innerHTML=items.length?items.slice(0,250).map(card=>`<div class="manage-row"><img src="${esc(card.image_url)}" alt=""><div class="manage-name"><strong>${esc(card.name)}</strong><small>${flag(card.language)} ${esc(card.version?.label||'Standard')}${card.foil?' · Foil':''}${card.condition?' · '+esc(card.condition):''}${card.grading?.company?' · '+esc(card.grading.company):''}</small></div><span>${esc(card.set?.id)} · ${esc(card.type)}</span><strong>×${card.quantity}</strong><span><button data-edit="${esc(card.collection_id)}">Edit</button> <button class="remove" data-remove-card="${esc(card.collection_id)}">Remove</button></span></div>`).join(''):'<div class="admin-empty">No matching inventory records.</div>';
   $$('[data-edit]').forEach(button=>button.addEventListener('click',()=>editInventory(button.dataset.edit)));
   $$('[data-remove-card]').forEach(button=>button.addEventListener('click',()=>removeInventory(button.dataset.removeCard)));
 }
@@ -164,8 +263,15 @@ function renderSession(){
 }
 
 $('#exportJson').addEventListener('click',()=>{
-  const output={...database,schema_version:2,updated_at:new Date().toISOString(),cards:workingCards};
+  const output={...database,schema_version:3,updated_at:new Date().toISOString(),cards:workingCards};
   const blob=new Blob([JSON.stringify(output,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='cards.json';link.click();URL.revokeObjectURL(url);toast('Updated cards.json downloaded');
 });
-$('#saveDraft').addEventListener('click',()=>{localStorage.setItem('riftarchive_admin_draft',JSON.stringify({...database,cards:workingCards}));toast('Browser draft saved')});
+$('#saveDraft').addEventListener('click',async()=>{
+  const button=$('#saveDraft'),output={...database,schema_version:3,updated_at:new Date().toISOString(),cards:workingCards};button.disabled=true;button.textContent='Publishing…';
+  try{
+    const response=await fetch('api.php?action=collection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({database:output})}),result=await response.json();
+    if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);
+    database=output;originalCards=clone(workingCards);localStorage.removeItem('riftarchive_admin_draft');$('#catalogStatus').textContent=`Published collection · ${result.copies} cards`;toast('Collection published for every device');
+  }catch(error){toast(`Publish failed: ${error.message}`)}finally{button.disabled=false;button.textContent='Publish collection'}
+});
 $('#discardDraft').addEventListener('click',()=>{if(!confirm('Discard all unexported session changes?'))return;localStorage.removeItem('riftarchive_admin_draft');workingCards=clone(originalCards);sessionLog=[];updateWorkingUI();toast('Working changes discarded')});

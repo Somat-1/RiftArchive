@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Bindery Admin</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="admin.css">
-  <script src="admin.js" defer></script>
+  <link rel="stylesheet" href="admin.css?v=4">
+  <script src="admin.js?v=11" defer></script>
 </head>
 <body class="admin-body">
   <section class="login-gate" id="loginGate">
@@ -47,9 +47,10 @@
 
         <section class="admin-view" id="importView">
           <div class="admin-card">
-            <div class="step-label">Bulk workflow</div><h2>Paste a deck or card list</h2><p>Headings are ignored. Each distinct card opens in sequence so quantities can be split across printings, finishes, and languages.</p>
-            <textarea id="importInput" class="import-input" spellcheck="false" placeholder="Legend:&#10;1 Sivir, Battle Mistress&#10;&#10;MainDeck:&#10;3 Traveling Merchant"></textarea>
-            <div class="import-actions"><button class="admin-primary" id="analyzeImport">Analyze and review cards</button><button class="admin-secondary" id="clearImport">Clear</button></div>
+            <div class="step-label">Bulk workflow</div><h2>Import a collection, deck, or card list</h2><p>Choose a Piltover collection CSV, paste its contents, or paste a simple quantity-and-name list. CSV printing, finish, language, condition, grading, and notes are carried into the working copy.</p>
+            <label class="csv-upload">Choose collection CSV<input id="importFile" type="file" accept=".csv,text/csv"><span id="importFileName">No file selected</span></label>
+            <textarea id="importInput" class="import-input" spellcheck="false" placeholder="Variant Number,Card Name,Set,...&#10;OGN-073,&quot;Sona, Harmonious&quot;,Origins,...&#10;&#10;or:&#10;3 Traveling Merchant"></textarea>
+            <div class="import-actions"><button class="admin-primary" id="analyzeImport">Import cards</button><button class="admin-secondary" id="clearImport">Clear</button></div>
             <div class="import-status" id="importStatus"></div>
           </div>
         </section>
@@ -68,9 +69,9 @@
         <div class="session-list" id="sessionList"><div class="admin-empty">No changes yet.</div></div>
         <div class="session-footer">
           <button class="admin-primary" id="exportJson">Download cards.json</button>
-          <button class="admin-secondary" id="saveDraft">Save browser draft</button>
+          <button class="admin-secondary" id="saveDraft">Publish collection</button>
           <button class="admin-link" id="discardDraft">Discard working changes</button>
-          <small>Publishing the exported file to the repository updates the public collection.</small>
+          <small>Publish saves the working copy on the server so every device sees it.</small>
         </div>
       </aside>
     </main>
