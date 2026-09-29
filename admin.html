@@ -6,7 +6,9 @@
   <title>Bindery Admin</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="admin.css?v=4">
-  <script src="admin.js?v=11" defer></script>
+  <link rel="stylesheet" href="tracker.css?v=1">
+  <script src="admin.js?v=12" defer></script>
+  <script src="tracker.js?v=2" defer></script>
 </head>
 <body class="admin-body">
   <section class="login-gate" id="loginGate">
@@ -35,6 +37,7 @@
           <button class="active" data-admin-view="single">Add single</button>
           <button data-admin-view="import">Paste import</button>
           <button data-admin-view="manage">Manage existing</button>
+          <button data-admin-view="play">Decks &amp; games</button>
         </nav>
 
         <section class="admin-view active" id="singleView">
@@ -59,6 +62,12 @@
           <div class="admin-card">
             <div class="manage-head"><div><div class="step-label">Working copy</div><h2>Edit or remove existing cards</h2></div><input id="manageSearch" type="search" placeholder="Filter current collection…"></div>
             <div class="manage-list" id="manageList"></div>
+          </div>
+        </section>
+
+        <section class="admin-view" id="playView">
+          <div id="trackerRoot" class="tracker-root">
+            <div class="tracker-loading">Loading your decks and game log&hellip;</div>
           </div>
         </section>
       </section>

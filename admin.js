@@ -82,7 +82,7 @@ function updateWorkingUI(){
   renderManage();renderSession();
 }
 
-$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));if(button.dataset.adminView==='manage')renderManage()}));
+$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));const playMode=button.dataset.adminView==='play';$('.admin-main').classList.toggle('play-mode',playMode);if(button.dataset.adminView==='manage')renderManage();if(playMode)document.dispatchEvent(new CustomEvent('riftarchive:tracker-open'))}));
 
 $('#singleSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(renderSearch,180)});
 function relevance(name,query){const n=normalize(baseName(name)),q=normalize(query);if(n===q)return 0;if(n.startsWith(q))return 1;if(n.includes(q))return 2;const tokens=q.split(' ');return 3+tokens.filter(t=>n.includes(t)).length*-0.1}

@@ -6,7 +6,9 @@
   <meta name="color-scheme" content="light">
   <title>Bindery — Riftbound Collection</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="app.js?v=3" defer></script>
+  <link rel="stylesheet" href="navigation.css">
+  <link rel="stylesheet" href="deck-search.css">
+  <script src="app.js?v=4" defer></script>
 </head>
 <body>
 <div class="app">
@@ -16,6 +18,7 @@
     <nav class="nav">
       <button class="nav-button active" data-view="browse"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Browse All</span><small class="shortcut">B</small></button>
       <button class="nav-button" data-view="deck"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m7 4 13 4-4 13L3 17 7 4Z"/><path d="m9.5 8.5 5 1.5M8.5 12l7 2"/></svg><span>Deck Search</span><small class="shortcut">D</small></button>
+      <a class="nav-button" href="git-gud.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Git Gud</span><small class="shortcut">G</small></a>
     </nav>
     <div class="collection-meter"><div class="meter-head"><strong id="sideUnique">184 unique</strong><span id="sideTotal">355 cards total</span></div></div>
     <a class="nav-button godmode-link" href="admin.html" aria-label="Open Godmode collection admin">
@@ -51,13 +54,13 @@
       <div class="view" id="deckView">
         <div class="page-head"><div><div class="eyebrow">Collection checker</div><h1>Deck Search</h1><p class="subhead">Paste a sectioned deck list. Every matching language, printing, and finish is included in the owned quantity.</p></div></div>
         <div class="deck-layout">
-          <section class="panel input-panel"><div class="panel-kicker">Step 01</div><h2>Paste your deck list</h2><p class="panel-copy">Section labels such as “MainDeck:” and “Runes:” are ignored.</p><textarea id="deckInput" spellcheck="false"></textarea><div class="button-row"><button class="primary-button" id="checkDeck">Check collection</button><button class="secondary-button" id="clearDeck">Clear</button></div></section>
+          <section class="panel input-panel"><div class="panel-kicker">Step 01</div><h2>Paste your deck list</h2><p class="panel-copy">Section labels such as “MainDeck:” and “Runes:” are ignored. The empty example shows the expected format.</p><textarea id="deckInput" spellcheck="false"></textarea><div class="button-row"><button class="primary-button" id="checkDeck" disabled>Check collection</button><button class="secondary-button" id="clearDeck">Clear</button></div></section>
           <section class="panel match-panel"><div class="match-header"><div class="panel-kicker">Step 02</div><h2>Collection match</h2><p class="panel-copy">Matching holdings show their language, printing, finish, and quantity.</p><div class="match-summary" id="matchSummary"></div></div><div class="comparison-head"><span>Your deck list</span><span>Collection match</span></div><div class="comparison" id="comparison"></div></section>
         </div>
       </div>
     </section>
   </main>
 </div>
-<nav class="mobile-bar"><button class="active" data-view="browse">Browse All</button><button data-view="deck">Deck Search</button><a href="admin.html">Godmode</a></nav>
+<nav class="mobile-bar"><button class="active" data-view="browse">Browse All</button><button data-view="deck">Deck Search</button><a href="git-gud.html">Git Gud</a><a href="admin.html">Godmode</a></nav>
 </body>
 </html>

@@ -7,6 +7,7 @@ define('RIFTCODEX_BASE', 'https://api.riftcodex.com');
 define('CACHE_DIR', dirname(__FILE__) . '/data');
 define('CACHE_FILE', CACHE_DIR . '/catalog-cache.json');
 define('COLLECTION_FILE', CACHE_DIR . '/collection.json');
+define('TRACKER_FILE', CACHE_DIR . '/play-tracker.json');
 define('CACHE_TTL', 43200);
 
 header('Content-Type: application/json; charset=utf-8');
@@ -22,6 +23,8 @@ $method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET'
 if ($action === 'catalog' && $method === 'GET') { handleCatalog(); }
 elseif ($action === 'collection' && $method === 'GET') { handleCollectionGet(); }
 elseif ($action === 'collection' && $method === 'POST') { handleCollectionSave(); }
+elseif ($action === 'tracker' && $method === 'GET') { handleTrackerGet(); }
+elseif ($action === 'tracker' && $method === 'POST') { handleTrackerSave(); }
 elseif ($action === 'login' && $method === 'POST') { handleLogin(); }
 elseif ($action === 'session' && $method === 'GET') { sendJson(array('authenticated' => isAdmin()), 200); }
 elseif ($action === 'logout' && $method === 'POST') { $_SESSION = array(); @session_destroy(); sendJson(array('ok' => true), 200); }
@@ -87,6 +90,37 @@ function handleLogin() {
     if (!$valid) { sendJson(array('error' => 'incorrect password'), 401); }
     $_SESSION['riftarchive_admin'] = true;
     sendJson(array('ok' => true), 200);
+}
+
+function emptyTracker() {
+    return array('schema_version' => 1, 'updated_at' => null, 'decks' => array(), 'matches' => array());
+}
+
+function handleTrackerGet() {
+    if (!isAdmin()) { sendJson(array('error' => 'authentication required'), 401); }
+    $path = is_file(TRACKER_FILE) ? TRACKER_FILE : dirname(__FILE__) . '/tracker.json';
+    $payload = is_file($path) ? json_decode(@file_get_contents($path), true) : emptyTracker();
+    if (!is_array($payload) || !isset($payload['decks']) || !is_array($payload['decks']) || !isset($payload['matches']) || !is_array($payload['matches'])) {
+        sendJson(array('error' => 'tracker unavailable'), 500);
+    }
+    sendJson($payload, 200);
+}
+
+function handleTrackerSave() {
+    if (!isAdmin()) { sendJson(array('error' => 'authentication required'), 401); }
+    $raw = @file_get_contents('php://input');
+    if ($raw === false || strlen($raw) > 20000000) { sendJson(array('error' => 'invalid payload'), 400); }
+    $payload = json_decode($raw, true);
+    $tracker = is_array($payload) && isset($payload['tracker']) ? $payload['tracker'] : $payload;
+    if (!is_array($tracker) || !isset($tracker['decks']) || !is_array($tracker['decks']) || !isset($tracker['matches']) || !is_array($tracker['matches']) || count($tracker['decks']) > 500 || count($tracker['matches']) > 10000) {
+        sendJson(array('error' => 'invalid tracker'), 400);
+    }
+    $tracker['schema_version'] = 1;
+    $tracker['updated_at'] = gmdate('c');
+    if (!ensureDataDir() || !writeJsonFile(TRACKER_FILE, $tracker)) {
+        sendJson(array('error' => 'tracker storage is not writable'), 500);
+    }
+    sendJson(array('ok' => true, 'decks' => count($tracker['decks']), 'matches' => count($tracker['matches']), 'updated_at' => $tracker['updated_at']), 200);
 }
 
 function isAdmin() { return isset($_SESSION['riftarchive_admin']) && $_SESSION['riftarchive_admin'] === true; }

@@ -9,48 +9,24 @@ const DOMAIN_ICONS={
   Order:'icons/RB_order_rune_icon.png'
 };
 const LANGUAGES={en:['English','GB'],fr:['French','FR'],de:['German','DE'],es:['Spanish','ES'],it:['Italian','IT'],pt:['Portuguese','PT'],pl:['Polish','PL'],ja:['Japanese','JP'],ko:['Korean','KR'],zh:['Chinese','CN']};
-const SAMPLE_DECK=`Legend:
-1 Lucian, Purifier
+const DECK_FORMAT=`Legend:
+1 Card Name
 
 Champion:
-1 Lucian, Merciless
+1 Card Name
 
 MainDeck:
-3 Noxus Hopeful
-3 First Mate
-3 Pit Rookie
-3 Long Sword
-3 Doran's Blade
-3 Punch First
-3 Irresistible Faefolk
-2 Sabotage
-2 Boneshiver
-2 Relentless Pursuit
-2 Blighted Battleaxe
-2 Rampage
-1 Confront
-1 Angle Shot
-1 Pendulum Blade
-3 Qiyana, Victorious
-2 Darius, Trifarian
+3 Card Name
+2 Another Card
 
 Battlefields:
-1 Windswept Hillock
-1 Forge of the Fluft
-1 Star Spring
+1 Battlefield Name
 
 Runes:
-7 Body Rune
-5 Fury Rune
+6 Rune Name
 
 Sideboard:
-2 Ferrous Forerunner
-2 Repulse
-2 Poppy, Paragon
-1 Confront
-1 Angle Shot
-1 Akshan, Mischievous
-1 Yone, Blademaster`;
+2 Card Name`;
 
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -89,11 +65,13 @@ function initialize(){
   $('#sortSelect').innerHTML='<option value=random>Random order</option><option value=quantity>Quantity high–low</option><option value=type>Card type</option>';
   buildTypeFilters();
   buildDomainFilters();
-  $('#deckInput').value=SAMPLE_DECK;
+  $('#deckInput').value='';
+  $('#deckInput').placeholder=DECK_FORMAT;
   bindEvents();
   updateTotals();
   renderCollection();
-  checkDeck();
+  renderDeckEmpty();
+  if(location.hash==='#deck')showView('deck');
 }
 
 function randomizeCollection(){
@@ -188,7 +166,6 @@ function showView(view){
   $$('.view').forEach(el=>el.classList.toggle('active',el.id===view+'View'));
   $$('[data-view]').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
   $('#crumb').textContent=view==='browse'?'Browse All':'Deck Search';
-  if(view==='deck')checkDeck();
   scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -208,22 +185,72 @@ function holdingsIndex(){
   return map;
 }
 
+function editDistance(left,right){
+  const previous=[...Array(right.length+1).keys()];
+  for(let row=1;row<=left.length;row++){
+    let diagonal=previous[0];previous[0]=row;
+    for(let column=1;column<=right.length;column++){
+      const above=previous[column],cost=left[row-1]===right[column-1]?0:1;
+      previous[column]=Math.min(previous[column]+1,previous[column-1]+1,diagonal+cost);
+      diagonal=above;
+    }
+  }
+  return previous[right.length];
+}
+
+function closestHoldings(name,holdings){
+  const query=normalize(name),exact=holdings.get(query);
+  if(exact)return{exact:true,groups:[{key:query,cards:exact}]};
+  if(query.length<2)return{exact:false,groups:[]};
+  const queryTokens=query.split(' ');
+  const ranked=[...holdings.entries()].map(([key,matchingCards])=>{
+    const nameTokens=key.split(' ');
+    let score=Number.POSITIVE_INFINITY;
+    if(key.startsWith(query))score=0;
+    else if(key.includes(query))score=1;
+    else if(queryTokens.every(token=>nameTokens.some(nameToken=>nameToken.startsWith(token))))score=2;
+    else{
+      const distance=Math.min(...nameTokens.map(token=>editDistance(query,token)));
+      if(distance<=Math.max(1,Math.floor(query.length*.25)))score=3+distance;
+    }
+    return{key,cards:matchingCards,score};
+  }).filter(candidate=>Number.isFinite(candidate.score)).sort((a,b)=>a.score-b.score||a.key.length-b.key.length||a.key.localeCompare(b.key)).slice(0,8);
+  return{exact:false,groups:ranked};
+}
+
+function candidateMarkup(group){
+  const matchingCards=group.cards,owned=matchingCards.reduce((sum,card)=>sum+Number(card.quantity||0),0),first=matchingCards[0];
+  const variants=matchingCards.map(card=>`<span class="holding-variant">${flag(card.language)} ${esc(variantLabel(card))}${card.foil?' · Foil':''} ×${card.quantity}</span>`).join('');
+  return`<div class="match-candidate"><img class="candidate-thumb" src="${esc(first.image_url)}" alt=""><div class="match-data"><div class="match-name">${esc(first.name)}</div><div class="match-variants">${variants}</div></div><span class="owned-count">${owned} owned</span></div>`;
+}
+
+function renderDeckEmpty(message='Enter or paste a deck list to check your collection.'){
+  $('#comparison').innerHTML=`<div class="empty deck-empty">${esc(message)}</div>`;
+  $('#matchSummary').innerHTML='';
+  $('#checkDeck').disabled=!$('#deckInput').value.trim();
+}
+
 function checkDeck(){
-  const parsed=parseDeck($('#deckInput').value),holdings=holdingsIndex();
-  let found=0,missing=0,short=0,lines=0;
+  const input=$('#deckInput').value.trim();
+  if(!input){renderDeckEmpty();return}
+  const parsed=parseDeck(input),holdings=holdingsIndex();
+  if(!parsed.some(item=>item.kind==='card')){renderDeckEmpty('Add at least one card line, for example “3 Card Name”.');return}
+  let found=0,missing=0,short=0,suggested=0,lines=0;
   $('#comparison').innerHTML=parsed.map(item=>{
     if(item.kind==='blank')return'';
     if(item.kind==='section')return`<div class="section-row">${esc(item.label)}</div>`;
     lines++;
-    const matches=holdings.get(normalize(item.name))||[],owned=matches.reduce((sum,c)=>sum+c.quantity,0);
-    const status=!matches.length?'missing':owned>=item.quantity?'found':'short';
-    status==='found'?found++:status==='short'?short++:missing++;
-    const icon=status==='found'?'✓':status==='short'?'!':'×';
-    const variants=matches.map(card=>`<span class="holding-variant">${flag(card.language)} ${esc(variantLabel(card))}${card.foil?' · Foil':''} ×${card.quantity}</span>`).join('');
-    const right=matches.length?`<img class="match-thumb" src="${esc(matches[0].image_url)}" alt=""><div class="match-data"><div class="match-name">${esc(matches[0].name)}</div><div class="match-variants">${variants}</div></div><span class="owned-count">${owned} owned</span>`:'<span class="no-match">No matching card found</span>';
+    const result=closestHoldings(item.name,holdings),matches=result.exact?result.groups[0].cards:[],owned=matches.reduce((sum,c)=>sum+Number(c.quantity||0),0);
+    const status=result.exact?(owned>=item.quantity?'found':'short'):result.groups.length?'suggested':'missing';
+    if(status==='found')found++;else if(status==='short')short++;else if(status==='suggested')suggested++;else missing++;
+    const icon=status==='found'?'✓':status==='missing'?'×':'!';
+    let right;
+    if(result.exact)right=`<div class="match-candidates">${candidateMarkup(result.groups[0])}</div>`;
+    else if(result.groups.length)right=`<div class="match-candidates"><div class="suggestion-label">Closest collection matches</div>${result.groups.map(candidateMarkup).join('')}</div>`;
+    else right='<span class="no-match">No matching card found</span>';
     return`<div class="compare-row ${status}"><div class="compare-cell"><span class="status-icon">${icon}</span><span class="input-card-name"><b>${item.quantity}×</b>${esc(item.name)}</span></div><div class="compare-cell">${right}</div></div>`;
   }).join('')||'<div class="empty">Paste a deck list on the left to begin.</div>';
-  $('#matchSummary').innerHTML=`<span class="summary-chip"><i class="summary-dot green"></i><strong>${found}</strong> covered</span><span class="summary-chip"><i class="summary-dot gold"></i><strong>${short}</strong> short</span><span class="summary-chip"><i class="summary-dot red"></i><strong>${missing}</strong> missing</span><span class="summary-chip"><strong>${lines}</strong> deck lines</span>`;
+  $('#matchSummary').innerHTML=`<span class="summary-chip"><i class="summary-dot green"></i><strong>${found}</strong> covered</span><span class="summary-chip"><i class="summary-dot gold"></i><strong>${short}</strong> short</span>${suggested?`<span class="summary-chip"><i class="summary-dot suggestion-dot"></i><strong>${suggested}</strong> suggested</span>`:''}<span class="summary-chip"><i class="summary-dot red"></i><strong>${missing}</strong> missing</span><span class="summary-chip"><strong>${lines}</strong> deck lines</span>`;
 }
 
 function clearFilters(){
@@ -240,7 +267,8 @@ function bindEvents(){
   $('#sortSelect').addEventListener('change',()=>{page=1;renderCollection()});
   $('#clearFilters').addEventListener('click',clearFilters);
   $('#checkDeck').addEventListener('click',checkDeck);
-  $('#clearDeck').addEventListener('click',()=>{$('#deckInput').value='';checkDeck()});
+  $('#deckInput').addEventListener('input',()=>{$('#checkDeck').disabled=!$('#deckInput').value.trim();if(!$('#deckInput').value.trim())renderDeckEmpty()});
+  $('#clearDeck').addEventListener('click',()=>{$('#deckInput').value='';renderDeckEmpty();$('#deckInput').focus()});
 }
 
 loadCollection();

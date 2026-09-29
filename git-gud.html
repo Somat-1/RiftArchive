@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Git Gud — Riftbound Combat Reference</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="icons/domain-icons.css">
+  <link rel="stylesheet" href="navigation.css">
+  <link rel="stylesheet" href="git-gud.css">
+  <script src="git-gud.js?v=2" defer></script>
+</head>
+<body class="gitgud-body">
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand brand-link" href="index.html"><div class="brand-mark">B</div><div><div class="brand-name">BINDERY</div><small class="brand-kicker">Riftbound archive</small></div></a>
+    <div class="nav-label">Collection</div>
+    <nav class="nav">
+      <a class="nav-button" href="index.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Browse All</span><small class="shortcut">B</small></a>
+      <a class="nav-button" href="index.html#deck"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m7 4 13 4-4 13L3 17 7 4Z"/><path d="m9.5 8.5 5 1.5M8.5 12l7 2"/></svg><span>Deck Search</span><small class="shortcut">D</small></a>
+      <a class="nav-button active" href="git-gud.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Git Gud</span><small class="shortcut">G</small></a>
+    </nav>
+    <div class="collection-meter gg-meter"><div class="meter-head"><strong id="ggTotal">— cards</strong><span>combat reference</span></div></div>
+    <a class="nav-button godmode-link" href="admin.html" aria-label="Open Godmode collection admin"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg><span>Godmode</span><small class="shortcut">Admin</small></a>
+  </aside>
+
+  <main class="main">
+    <header class="topbar"><div class="crumbs">Bindery&nbsp; / &nbsp;<b>Git Gud</b></div><div class="load-status" id="ggLoadStatus">Loading combat reference</div></header>
+    <section class="page gg-page">
+      <div class="page-head gg-hero"><div><div class="eyebrow">Know the possibilities</div><h1>Git Gud <span class="count-tag" id="ggHeaderCount"></span></h1><p class="subhead">Explore cards with Hidden, Action, Reaction, Ambush, Quick-Draw, and Accelerate. Combine keyword, domain, and Energy filters to narrow the plays your opponent could have.</p></div></div>
+
+      <div class="gg-layout">
+        <section class="gg-results">
+          <div class="result-meta" id="ggResultsTop"><span>Showing <strong id="ggShownCount">0</strong> cards</span><label>Sort&nbsp; <select class="sort-select" id="ggSort"><option value="energy-asc">Energy low–high</option><option value="energy-desc">Energy high–low</option><option value="name">Name A–Z</option></select></label></div>
+          <div class="gg-card-grid" id="ggCardGrid"><div class="empty">Loading cards…</div></div>
+          <nav class="pagination" id="ggPagination" aria-label="Git Gud card pages"></nav>
+        </section>
+
+        <aside class="filters gg-filters">
+          <div class="filters-title"><h3>Read the play</h3><button class="clear-button" id="ggClear">Clear all</button></div>
+          <div class="search-box"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="ggSearch" type="search" placeholder="Search cards…" autocomplete="off"></div>
+
+          <div class="filter-section"><div class="filter-label">Keyword · select one or more</div><div class="gg-keywords" id="ggKeywordFilters"></div><div class="domain-note">Multiple selections show cards with any selected keyword.</div></div>
+          <div class="filter-section"><div class="filter-label">Domain · select one or more</div><div class="domain-grid" id="ggDomainFilters"></div><div class="domain-note">Multi-domain cards match when at least one selected domain applies.</div></div>
+          <div class="filter-section"><div class="filter-label">Energy cost</div><div class="gg-energy-range"><label>Minimum<select id="ggMinEnergy"></select></label><span>to</span><label>Maximum<select id="ggMaxEnergy"></select></label></div><label class="gg-check"><input id="ggNoCost" type="checkbox" checked> Include cards without an Energy cost</label><div class="domain-note">Set minimum and maximum to the same value for an exact cost.</div></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="mobile-bar"><a href="index.html">Browse</a><a href="index.html#deck">Deck Search</a><a class="active" href="git-gud.html">Git Gud</a><a class="admin-mobile" href="admin.html">Godmode</a></nav>
+</body>
+</html>
