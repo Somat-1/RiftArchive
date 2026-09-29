@@ -17,7 +17,7 @@
       <button class="nav-button active" data-view="browse"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Browse All</span><small class="shortcut">B</small></button>
       <button class="nav-button" data-view="deck"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m7 4 13 4-4 13L3 17 7 4Z"/><path d="m9.5 8.5 5 1.5M8.5 12l7 2"/></svg><span>Deck Search</span><small class="shortcut">D</small></button>
     </nav>
-    <div class="collection-meter"><div class="meter-head"><span>Collection</span><strong id="sideTotal">—</strong></div><div class="meter-bar"></div><div class="meter-copy" id="sideUnique">Loading database…</div></div>
+    <div class="collection-meter"><div class="meter-head"><strong id="sideUnique">184 unique</strong><span id="sideTotal">355 cards total</span></div></div>
     <a class="nav-button godmode-link" href="admin.html" aria-label="Open Godmode collection admin">
       <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>
       <span>Godmode</span><small class="shortcut">Admin</small>
@@ -28,7 +28,7 @@
     <header class="topbar"><div class="crumbs">Bindery&nbsp; / &nbsp;<b id="crumb">Browse All</b></div><div class="load-status" id="loadStatus">Loading cards.json</div></header>
     <section class="page">
       <div class="view active" id="browseView">
-        <div class="page-head"><div><div class="eyebrow">Personal archive</div><h1>Your collection <span class="count-tag" id="headerCount"></span></h1><p class="subhead">Browse every printing you own. Search by name, narrow by type or domain, and hover a card to see its language, version, and finish.</p></div>
+        <div class="page-head"><div><div class="eyebrow">Personal archive</div><h1>Collection <span class="count-tag" id="headerCount"></span></h1></div>
           <div class="segmented"><button class="segment active" data-mode="gallery"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Gallery</button><button class="segment" data-mode="list"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>List</button></div>
         </div>
         <div class="browser">

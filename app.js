@@ -1,6 +1,13 @@
 const PAGE_SIZE=50;
 const DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order'];
-const DOMAIN_ICONS={Body:'&#9670;',Calm:'&#8779;',Chaos:'&#10022;',Colorless:'&#9675;',Fury:'&#9650;',Mind:'&#9673;',Order:'&#10022;'};
+const DOMAIN_ICONS={
+  Body:'icons/RB_body_rune_icon.png',
+  Calm:'icons/RB_calm_rune_icon.png',
+  Chaos:'icons/RB_chaos_rune_icon.png',
+  Fury:'icons/RB_fury_rune_icon.png',
+  Mind:'icons/RB_mind_rune_icon.png',
+  Order:'icons/RB_order_rune_icon.png'
+};
 const LANGUAGES={en:['English','GB'],fr:['French','FR'],de:['German','DE'],es:['Spanish','ES'],it:['Italian','IT'],pt:['Portuguese','PT'],pl:['Polish','PL'],ja:['Japanese','JP'],ko:['Korean','KR'],zh:['Chinese','CN']};
 const SAMPLE_DECK=`Legend:
 1 Lucian, Purifier
@@ -52,7 +59,12 @@ const normalize=value=>String(value??'').toLowerCase().replace(/[’‘]/g,"'").
 const flag=(language='en')=>{const cc=(LANGUAGES[language]||LANGUAGES.en)[1];return [...cc].map(c=>String.fromCodePoint(127397+c.charCodeAt())).join('')};
 const languageName=code=>(LANGUAGES[code]||[code.toUpperCase()])[0];
 
-let cards=[],filtered=[],page=1,mode='gallery';
+const domainIconStyles=document.createElement('link');
+domainIconStyles.rel='stylesheet';
+domainIconStyles.href='icons/domain-icons.css';
+document.head.append(domainIconStyles);
+
+let cards=[],filtered=[],page=1,mode='gallery',randomOrder=new Map();
 const activeTypes=new Set(),activeDomains=new Set();
 
 async function loadCollection(){
@@ -62,6 +74,7 @@ async function loadCollection(){
     try{const response=await fetch('api.php?action=collection',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json();if(!Array.isArray(database.cards))throw new Error('Invalid collection')}catch(serverError){const response=await fetch('cards.json',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);database=await response.json()}
     const draft=localStorage.getItem('riftarchive_admin_draft');
     cards=draft?JSON.parse(draft).cards:database.cards;
+    randomizeCollection();
     status.textContent=draft?'Local admin draft':'Published collection';
     status.classList.add('ready');
     initialize();
@@ -73,6 +86,7 @@ async function loadCollection(){
 }
 
 function initialize(){
+  $('#sortSelect').innerHTML='<option value=random>Random order</option><option value=quantity>Quantity high–low</option><option value=type>Card type</option>';
   buildTypeFilters();
   buildDomainFilters();
   $('#deckInput').value=SAMPLE_DECK;
@@ -82,11 +96,20 @@ function initialize(){
   checkDeck();
 }
 
+function randomizeCollection(){
+  const shuffled=[...cards];
+  for(let index=shuffled.length-1;index>0;index--){
+    const swap=Math.floor(Math.random()*(index+1));
+    [shuffled[index],shuffled[swap]]=[shuffled[swap],shuffled[index]];
+  }
+  randomOrder=new Map(shuffled.map((card,index)=>[card,index]));
+}
+
 function updateTotals(){
   const total=cards.reduce((sum,c)=>sum+Number(c.quantity||0),0);
   const unique=new Set(cards.map(c=>normalize(c.name))).size;
-  $('#sideTotal').textContent=total+' cards';
-  $('#sideUnique').textContent=unique+' unique / '+cards.length+' variants';
+  $('#sideUnique').textContent=unique+' unique';
+  $('#sideTotal').textContent=total+' cards total';
   $('#headerCount').textContent=unique+' unique';
 }
 
@@ -99,6 +122,11 @@ function buildTypeFilters(){
 function buildDomainFilters(){
   const counts=cards.reduce((map,card)=>{(card.domains||[]).forEach(d=>map[d]=(map[d]||0)+1);return map},{});
   $('#domainFilters').innerHTML=DOMAINS.map(domain=>`<button class="domain-button" type="button" data-domain="${domain}" aria-pressed="false"><em>${counts[domain]||0}</em><span class="domain-icon">${DOMAIN_ICONS[domain]}</span><span>${domain}</span></button>`).join('');
+  $('#domainFilters').innerHTML=DOMAINS.map(domain=>{
+    const icon=DOMAIN_ICONS[domain];
+    const artwork=icon?`<img class='domain-icon' src='${esc(icon)}' alt=''>`:`<span class='domain-icon domain-icon-fallback' aria-hidden='true'>○</span>`;
+    return`<button class='domain-button' type='button' data-domain='${domain}' aria-pressed='false'><em>${counts[domain]||0}</em>${artwork}<span>${domain}</span></button>`;
+  }).join('');
   $$('#domainFilters button').forEach(button=>button.addEventListener('click',()=>{const domain=button.dataset.domain;activeDomains.has(domain)?activeDomains.delete(domain):activeDomains.add(domain);button.classList.toggle('active',activeDomains.has(domain));button.setAttribute('aria-pressed',String(activeDomains.has(domain)));page=1;renderCollection()}));
 }
 
@@ -109,9 +137,9 @@ function getFiltered(){
     (!activeTypes.size||activeTypes.has(card.type))&&
     (!activeDomains.size||(card.domains||[]).some(domain=>activeDomains.has(domain)))
   ).sort((a,b)=>{
-    if(sort==='quantity')return b.quantity-a.quantity||a.name.localeCompare(b.name);
-    if(sort==='type')return a.type.localeCompare(b.type)||a.name.localeCompare(b.name);
-    return a.name.localeCompare(b.name)||a.riftbound_id.localeCompare(b.riftbound_id);
+    if(sort==='quantity')return b.quantity-a.quantity||(randomOrder.get(a)-randomOrder.get(b));
+    if(sort==='type')return a.type.localeCompare(b.type)||(randomOrder.get(a)-randomOrder.get(b));
+    return randomOrder.get(a)-randomOrder.get(b);
   });
 }
 

@@ -1,0 +1,23 @@
+.domain-icon{
+  width:30px;
+  height:30px;
+  display:block!important;
+  object-fit:contain;
+  margin:0 auto 5px;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  filter:drop-shadow(0 1px 1px #0002);
+}
+
+.domain-icon-fallback{
+  display:grid!important;
+  place-items:center;
+  border:1px solid color-mix(in srgb,var(--domain) 45%,white);
+  border-radius:50%;
+  color:var(--domain);
+  font-size:15px;
+  font-weight:700;
+  background:color-mix(in srgb,var(--domain) 8%,white);
+  filter:none;
+}
