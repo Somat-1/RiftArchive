@@ -1,16 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Bindery Admin</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="admin.css?v=4">
-  <link rel="stylesheet" href="tracker.css?v=1">
-  <script src="admin.js?v=12" defer></script>
-  <script src="tracker.js?v=2" defer></script>
+  <link rel="stylesheet" href="admin.css?v=5">
+  <link rel="stylesheet" href="tracker.css?v=2">
+  <link rel="stylesheet" href="theme.css?v=1">
+  <script src="theme.js?v=2" defer></script>
+  <script src="admin.js?v=13" defer></script>
+  <script src="tracker.js?v=3" defer></script>
 </head>
-<body class="admin-body">
+<body class="admin-body" data-default-theme="dark">
   <section class="login-gate" id="loginGate">
     <form class="login-card" id="loginForm">
       <div class="brand-mark">B</div>
@@ -29,6 +31,11 @@
       <div class="catalog-status"><span id="catalogDot"></span><span id="catalogStatus">Loading cards.json…</span></div>
       <div class="admin-actions"><a href="index.html">View collection</a><button id="lockAdmin">Lock</button></div>
     </header>
+    <nav class="admin-mode-nav" aria-label="Godmode areas">
+      <div class="nav-label">Godmode</div>
+      <button class="admin-mode-button active" data-admin-home><span class="admin-mode-icon">C</span><span><strong>Collection</strong><small>Add and manage cards</small></span></button>
+      <button class="admin-mode-button" data-admin-view="play"><span class="admin-mode-icon">D</span><span><strong>Decks &amp; games</strong><small>Build, play, and review</small></span></button>
+    </nav>
 
     <main class="admin-main">
       <section class="admin-workspace">
@@ -37,7 +44,6 @@
           <button class="active" data-admin-view="single">Add single</button>
           <button data-admin-view="import">Paste import</button>
           <button data-admin-view="manage">Manage existing</button>
-          <button data-admin-view="play">Decks &amp; games</button>
         </nav>
 
         <section class="admin-view active" id="singleView">
