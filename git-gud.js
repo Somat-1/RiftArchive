@@ -2,6 +2,10 @@ const GG_PAGE_SIZE=48;
 if(new URLSearchParams(location.search).get('embed')==='1')document.body.classList.add('embedded');
 const GG_KEYWORDS=['Hidden','Action','Reaction','Ambush','Quick-Draw','Accelerate'];
 const GG_DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order'];
+const GG_BANNED_NAMES=new Set([
+  'Called Shot','Ekko, Recurrent','Draven, Vanquisher','Fight or Flight','Scrapheap','Stealthy Pursuer','Stacked Deck',
+  "The Arena's Greatest","Aspirant's Climb",'Dreaming Tree','Obelisk of Power',"Reaver's Row"
+].map(value=>String(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()));
 const GG_DOMAIN_ICONS={
   Body:'icons/RB_body_rune_icon.png',
   Calm:'icons/RB_calm_rune_icon.png',
@@ -15,6 +19,22 @@ const $=selector=>document.querySelector(selector);
 const $$=selector=>[...document.querySelectorAll(selector)];
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const normalize=value=>String(value??'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+const canonicalName=value=>String(value??'')
+  .replace(/\s*\((?:alternate art|overnumbered|signature|metal|starter|launch exclusive|ultimate|gg ez|showcase)\)\s*$/i,'')
+  .replace(/\s+(?:alternate art|overnumbered|signature|metal|showcase)\s*$/i,'')
+  .replace(/\s+-\s+/g,', ')
+  .trim();
+const specialPrinting=card=>/showcase/i.test(String(card?.rarity||''))||/(?:alternate art|overnumbered|signature|metal|showcase)\)?\s*$/i.test(String(card?.name||''));
+function playableUniqueCards(cards){
+  const unique=new Map();
+  cards.forEach(card=>{
+    const name=canonicalName(card?.name),key=normalize(name);
+    if(!name||String(card?.type||'').toLowerCase()==='legend'||GG_BANNED_NAMES.has(key))return;
+    const current=unique.get(key),candidate={card:{...card,name},special:specialPrinting(card)};
+    if(!current||(current.special&&!candidate.special))unique.set(key,candidate);
+  });
+  return [...unique.values()].map(entry=>entry.card);
+}
 
 let ggCards=[];
 let ggFiltered=[];
@@ -28,7 +48,7 @@ async function loadGitGud(){
     const response=await fetch('gitgud-cards.json',{cache:'no-store'});
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
-    ggCards=Array.isArray(data.cards)?data.cards:[];
+    ggCards=playableUniqueCards(Array.isArray(data.cards)?data.cards:[]);
     buildKeywordFilters();
     buildDomainFilters();
     buildEnergyFilters();

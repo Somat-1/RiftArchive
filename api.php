@@ -9,6 +9,7 @@ define('CACHE_FILE', CACHE_DIR . '/catalog-cache.json');
 define('COLLECTION_FILE', CACHE_DIR . '/collection.json');
 define('TRACKER_FILE', CACHE_DIR . '/play-tracker.json');
 define('CACHE_TTL', 43200);
+require_once dirname(__FILE__) . '/legend-stats-service.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -25,6 +26,8 @@ elseif ($action === 'collection' && $method === 'GET') { handleCollectionGet(); 
 elseif ($action === 'collection' && $method === 'POST') { handleCollectionSave(); }
 elseif ($action === 'tracker' && $method === 'GET') { handleTrackerGet(); }
 elseif ($action === 'tracker' && $method === 'POST') { handleTrackerSave(); }
+elseif ($action === 'legend_stats' && $method === 'GET') { handleLegendStatsGet(); }
+elseif ($action === 'legend_stats' && $method === 'POST') { handleLegendStatsRefresh(); }
 elseif ($action === 'login' && $method === 'POST') { handleLogin(); }
 elseif ($action === 'session' && $method === 'GET') { sendJson(array('authenticated' => isAdmin()), 200); }
 elseif ($action === 'logout' && $method === 'POST') { $_SESSION = array(); @session_destroy(); sendJson(array('ok' => true), 200); }
@@ -275,7 +278,7 @@ function sendJson($payload, $status) {
 
 function http_response_code_compat($status) {
     if (function_exists('http_response_code')) { http_response_code($status); return; }
-    $messages = array(200 => 'OK', 400 => 'Bad Request', 401 => 'Unauthorized', 404 => 'Not Found', 500 => 'Internal Server Error', 502 => 'Bad Gateway');
+    $messages = array(200 => 'OK', 400 => 'Bad Request', 401 => 'Unauthorized', 404 => 'Not Found', 409 => 'Conflict', 429 => 'Too Many Requests', 500 => 'Internal Server Error', 502 => 'Bad Gateway', 503 => 'Service Unavailable');
     $message = isset($messages[$status]) ? $messages[$status] : '';
     header('HTTP/1.1 ' . $status . ' ' . $message);
 }

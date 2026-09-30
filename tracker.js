@@ -15,8 +15,23 @@ const dateText=value=>value?new Intl.DateTimeFormat(undefined,{dateStyle:'medium
 const catalogCard=id=>catalog.find(card=>(card.riftbound_id||card.id)===id);
 const typeOf=card=>String(card?.classification?.type||card?.type||'').toLowerCase();
 const imageOf=card=>card?.media?.image_url||card?.image_url||'card-placeholder.svg';
-const nameOf=card=>typeof displayName==='function'?displayName(card?.name||'Unknown card'):String(card?.name||'Unknown card');
+const canonicalCardName=value=>{
+  const raw=typeof value==='object'?value?.name:value;
+  const displayed=typeof displayName==='function'?displayName(raw||'Unknown card'):String(raw||'Unknown card');
+  return displayed
+    .replace(/\s*\((?:alternate art|overnumbered|signature|metal|starter|launch exclusive|ultimate|gg ez|showcase)\)\s*$/i,'')
+    .replace(/\s+(?:alternate art|overnumbered|signature|metal|showcase)\s*$/i,'')
+    .replace(/\s+-\s+/g,', ')
+    .trim();
+};
+const nameOf=card=>canonicalCardName(card);
+const isSpecialPrinting=card=>{
+  const metadata=card?.metadata||{},rarity=String(card?.classification?.rarity||card?.rarity||'');
+  return /showcase/i.test(rarity)||/(?:alternate art|overnumbered|signature|metal|showcase)\)?\s*$/i.test(String(card?.name||''))||
+    ['alternate_art','overnumbered','signature','metal','starter','launch_exclusive','ultimate','gg_ez'].some(key=>Boolean(metadata[key]));
+};
 let tracker=emptyTracker(),loaded=false,serverBacked=false,deckDraft=null,deckOriginal=null,pendingChanges=[],matchDraft=null,matchStep='deck';
+const opponentMetaCache=new Map();let keyCardLens='curated',keyCardBoard='main',keyCardsExpanded=true;
 document.addEventListener('riftarchive:tracker-open',()=>loadTracker());
 async function loadTracker(){
   if(loaded){renderDashboard();return}
@@ -109,7 +124,14 @@ function openMatch(deckId,matchId){
  matchDraft=existing?copy(existing):{id:uid('match'),deck_id:deckId||tracker.decks[0].id,played_at:nowInput(),status:'Completed',your_score:0,opponent_score:0,opponent_legend:null,opponent_battlefield:null,comments:'',created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
  renderMatchWorkspace();
 }
-function uniqueCatalogType(type){const seen=new Set();return catalog.filter(card=>typeOf(card)===type.toLowerCase()).filter(card=>{const key=norm(nameOf(card));if(seen.has(key))return false;seen.add(key);return true}).sort((a,b)=>nameOf(a).localeCompare(nameOf(b)))}
+function uniqueCatalogType(type){
+ const unique=new Map();
+ catalog.filter(card=>typeOf(card)===type.toLowerCase()).forEach(card=>{
+  const key=norm(canonicalCardName(card)),current=unique.get(key);
+  if(!current||(isSpecialPrinting(current)&&!isSpecialPrinting(card)))unique.set(key,card);
+ });
+ return [...unique.values()].sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
+}
 function selectorCards(type,query){const q=norm(query);return uniqueCatalogType(type).filter(card=>!q||norm(nameOf(card)).includes(q)).slice(0,36)}
 function renderMatchWorkspace(legendQuery='',battlefieldQuery=''){
  const deck=tracker.decks.find(item=>item.id===matchDraft.deck_id)||tracker.decks[0];if(deck)matchDraft.deck_id=deck.id;
@@ -139,11 +161,36 @@ function matchProgress(){const steps=[['deck','1','Your deck'],['legend','2','Op
 function renderMatchWorkspace(query=''){
  const deck=tracker.decks.find(item=>item.id===matchDraft.deck_id);
  ROOT.innerHTML=`<div class="workspace-bar"><button class="back-button" data-match-back>← Back</button><div class="workspace-actions">${matchStep==='notes'?'<button class="admin-primary" data-score-step>Enter score →</button>':''}</div></div>${matchProgress()}<div class="match-stage">${matchStep==='deck'?deckChoiceMarkup():matchStep==='legend'?legendChoiceMarkup(query):matchStep==='notes'?notesMarkup(deck):scoreMarkup(deck)}</div>`;
+ if(matchStep==='notes')setTimeout(loadOpponentMeta,0);
 }
 function deckChoiceMarkup(){return `<header class="flow-heading"><div class="step-label">Step one</div><h1>Choose your deck</h1><p>Select the deck you played. You will choose the opposing Legend next.</p></header><div class="flow-card-grid deck-choice-grid">${tracker.decks.map(deck=>{const legend=deck.sections?.legend?.[0];return `<button data-match-deck="${html(deck.id)}"><span class="flow-art">${legend?`<img src="${html(legend.image_url)}" alt="">`:'<i>?</i>'}</span><strong>${html(deck.name)}</strong><small>${deckTotal(deck)} cards</small></button>`}).join('')}</div>`}
 function legendChoiceMarkup(query=''){const q=norm(query),legends=uniqueCatalogType('Legend').filter(card=>!q||norm(nameOf(card)).includes(q));return `<header class="flow-heading"><div class="step-label">Step two</div><h1>Choose the opposing Legend</h1><p>Each Legend appears once, regardless of printing or artwork.</p></header><div class="flow-search"><input data-match-legend-search value="${html(query)}" type="search" placeholder="Search Legends…"></div><div class="flow-card-grid legend-choice-grid" data-legend-choice-grid>${legendCardsMarkup(legends)}</div>`}
 function legendCardsMarkup(cards){return cards.map(card=>`<button data-match-legend="${html(card.riftbound_id||card.id)}"><span class="flow-art"><img src="${html(imageOf(card))}" alt=""></span><strong>${html(nameOf(card))}</strong></button>`).join('')}
-function notesMarkup(deck){return `<header class="flow-heading compact"><div><div class="step-label">Step three · ${html(deck?.name||'Deck')}</div><h1>Review the matchup</h1><p>Add notes while checking possible plays below.</p></div><div class="matchup-mini">${deck?.sections?.legend?.[0]?`<img src="${html(deck.sections.legend[0].image_url)}" alt="">`:''}<span>vs</span><img src="${html(matchDraft.opponent_legend?.image_url||'card-placeholder.svg')}" alt=""></div></header><section class="game-notes-card"><div class="game-note-head"><label>Played at<input type="datetime-local" data-match-field="played_at" value="${html(matchDraft.played_at)}"></label><button class="admin-primary" data-score-step>Enter score →</button></div><label><span>Game comments</span><textarea data-match-field="comments" placeholder="Key turns, mistakes, sideboard plan, cards to remember…">${html(matchDraft.comments||'')}</textarea></label></section><section class="gitgud-stack"><header><div><div class="step-label">Combat reference</div><h2>Git Gud lookup</h2></div><a href="git-gud.html" target="_blank">Open full page ↗</a></header><iframe src="git-gud.html?embed=1" title="Git Gud card reference"></iframe></section>`}
+function notesMarkup(deck){return `<header class="flow-heading compact matchup-review-heading"><div><div class="step-label">Step three · ${html(deck?.name||'Deck')}</div><h1>Review the matchup</h1><p>Keep likely answers and the opponent’s core engine visible while you take notes.</p></div><div class="matchup-mini">${deck?.sections?.legend?.[0]?`<img src="${html(deck.sections.legend[0].image_url)}" alt="">`:''}<span>vs</span><img src="${html(matchDraft.opponent_legend?.image_url||'card-placeholder.svg')}" alt=""></div></header><div class="match-review-layout"><aside class="match-review-rail"><section class="match-lens-card"><div class="step-label">Key-card filters</div><div class="match-lens-group"><span>Signal</span><div><button class="${keyCardLens==='curated'?'active':''}" data-key-lens="curated">Curated</button><button class="${keyCardLens==='popular'?'active':''}" data-key-lens="popular">Popular</button><button class="${keyCardLens==='performance'?'active':''}" data-key-lens="performance">Top 16</button></div></div><div class="match-lens-group"><span>Zone</span><div><button class="${keyCardBoard==='main'?'active':''}" data-key-board="main">Main deck</button><button class="${keyCardBoard==='sideboard'?'active':''}" data-key-board="sideboard">Sideboard</button></div></div><p data-key-method>${keyLensCopy()}</p></section><section class="game-notes-card compact-notes"><div class="game-note-head"><label>Played at<input type="datetime-local" data-match-field="played_at" value="${html(matchDraft.played_at)}"></label></div><label><span>Game comments</span><textarea data-match-field="comments" placeholder="Key turns, mistakes, sideboard plan, cards to remember…">${html(matchDraft.comments||'')}</textarea></label></section><details class="key-enablers" ${keyCardsExpanded?'open':''} data-key-enablers><summary><span><small>Opponent deck engine</small><strong>Key enabling cards</strong></span><i aria-hidden="true">⌄</i></summary><div class="key-enabler-body" data-opponent-meta><div class="key-meta-state">Loading cached Legend analysis…</div></div></details></aside><section class="gitgud-stack review-gitgud"><header><div><div class="step-label">Combat reference</div><h2>Git Gud lookup</h2></div><a href="git-gud.html" target="_blank">Open full page ↗</a></header><iframe src="git-gud.html?embed=1" title="Git Gud card reference"></iframe></section></div>`}
+
+function keyLensCopy(){return keyCardLens==='popular'?'Shows the most frequently included cards, including basic curve pieces.':keyCardLens==='performance'?'Shows cards overrepresented in Top-16 lists. Small samples are labeled.':'Hides Common Units costing 2 Energy or less, then ranks high-inclusion engine pieces and positive Top-16 signals.'}
+function opponentDotId(){const id=String(matchDraft?.opponent_legend?.riftbound_id||''),match=id.match(/^([a-z0-9]+)-(\d+)(?:-|$)/i);return match?`${match[1].toUpperCase()}-${String(Number(match[2])).padStart(3,'0')}`:''}
+function catalogByDotId(id){return catalog.find(card=>{const set=String(card?.set?.set_id||card?.set?.id||'').toUpperCase(),collector=Number(card?.collector_number);return set&&collector&&`${set}-${String(collector).padStart(3,'0')}`===id&&!isSpecialPrinting(card)})||catalog.find(card=>{const set=String(card?.set?.set_id||card?.set?.id||'').toUpperCase(),collector=Number(card?.collector_number);return set&&collector&&`${set}-${String(collector).padStart(3,'0')}`===id})}
+async function loadOpponentMeta(){
+ const host=ROOT.querySelector('[data-opponent-meta]'),id=opponentDotId();if(!host||!id)return;
+ if(opponentMetaCache.has(id)){renderOpponentMeta(opponentMetaCache.get(id));return}
+ try{const response=await fetch(`api.php?action=legend_stats&legend_id=${encodeURIComponent(id)}`,{cache:'no-store'}),result=await response.json();if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);opponentMetaCache.set(id,result);if(id===opponentDotId())renderOpponentMeta(result)}
+ catch(error){if(id!==opponentDotId())return;host.innerHTML=`<div class="key-meta-state"><strong>No cached matchup data</strong><span>${html(error.message)} Build this Legend’s sample in Legend Meta first.</span><button data-open-legend-meta>Open Legend Meta</button></div>`}
+}
+function metaCardDetails(card){const catalogCard=catalogByDotId(card.id)||{},classification=catalogCard.classification||{};return{...card,rarity:card.rarity||classification.rarity||'',energy:card.energy??catalogCard.attributes?.energy??null,type:card.type||classification.type||'Card'}}
+function keyCardRows(data){
+ let rows=(keyCardBoard==='sideboard'?data?.cards?.sideboard:data?.cards?.main)||[];rows=rows.map(metaCardDetails);
+ if(keyCardLens==='curated')rows=rows.filter(card=>!(String(card.type).toLowerCase()==='unit'&&String(card.rarity).toLowerCase()==='common'&&Number(card.energy)<=2)).filter(card=>Number(card.inclusion)>=30&&(Number(card.inclusion)>=55||Number(card.top_16_lift)>=4||/rare|epic|showcase/i.test(card.rarity))).sort((a,b)=>keySignal(b)-keySignal(a));
+ else if(keyCardLens==='performance')rows=rows.filter(card=>Number(card.top_deck_count)>=2&&Number(card.top_16_lift)>=3).sort((a,b)=>Number(b.top_16_lift)-Number(a.top_16_lift)||Number(b.inclusion)-Number(a.inclusion));
+ else rows=rows.filter(card=>Number(card.inclusion)>=30).sort((a,b)=>Number(b.inclusion)-Number(a.inclusion));
+ return rows.slice(0,6);
+}
+function keySignal(card){const rarity=/epic/i.test(card.rarity)?8:/rare/i.test(card.rarity)?5:0,lift=Math.min(15,Math.max(0,Number(card.top_16_lift)||0));return Number(card.inclusion)*.7+lift*.6+Math.min(3,Number(card.average_copies)||0)*5+rarity}
+function renderOpponentMeta(data){
+ const host=ROOT.querySelector('[data-opponent-meta]');if(!host)return;const rows=keyCardRows(data),sample=data.sample||{};
+ host.innerHTML=`<div class="key-meta-summary"><span>${sample.decks||0} unique lists</span><span>${sample.top_16_decks||0} Top-16</span></div>${rows.length?`<div class="key-card-list">${rows.map(keyCardMarkup).join('')}</div>`:'<div class="key-meta-state"><strong>No strong signal in this view</strong><span>Try Popular or switch between main deck and sideboard.</span></div>'}<small class="key-meta-foot">Cached tournament data · association, not win rate</small>`;
+}
+function keyCardMarkup(card){const lift=Number(card.top_16_lift);return `<article class="key-card"><img src="${html(card.image_url||'card-placeholder.svg')}" alt="" loading="lazy" onerror="this.src='card-placeholder.svg'"><div><strong>${html(card.name)}</strong><span>${Number(card.inclusion||0).toLocaleString(undefined,{maximumFractionDigits:1})}% of lists · ${Number(card.average_copies||0).toLocaleString(undefined,{maximumFractionDigits:1})} avg.</span></div><b class="${lift>0?'up':''}">${Number.isFinite(lift)&&lift!==0?`${lift>0?'+':''}${lift.toLocaleString(undefined,{maximumFractionDigits:1})} pts`:'core'}</b></article>`}
 function scoreMarkup(deck){const yours=deck?.sections?.legend?.[0],opponent=matchDraft.opponent_legend;return `<header class="flow-heading"><div class="step-label">Final step</div><h1>Enter the game score</h1><p>Left-click a Legend to subtract. Right-click it to add, from 0 to 3.</p></header><div class="score-clickers"><button data-score-side="your_score" aria-label="Adjust your score"><span class="score-portrait">${yours?`<img src="${html(yours.image_url)}" alt="">`:'<i>?</i>'}</span><strong>${html(deck?.name||'Your deck')}</strong><b>${Number(matchDraft.your_score)||0}</b><small>Left − · Right +</small></button><div class="score-versus">VS</div><button data-score-side="opponent_score" aria-label="Adjust opponent score"><span class="score-portrait"><img src="${html(opponent?.image_url||'card-placeholder.svg')}" alt=""></span><strong>${html(opponent?.name||'Opponent')}</strong><b>${Number(matchDraft.opponent_score)||0}</b><small>Left − · Right +</small></button></div><div class="score-save"><button class="admin-secondary" data-notes-step>← Notes</button><button class="admin-primary" data-save-match>Save match result</button></div>`}
 function adjustScore(field,amount){matchDraft[field]=Math.min(3,Math.max(0,Number(matchDraft[field]||0)+amount));renderMatchWorkspace()}
 async function saveMatch(){if(!matchDraft.deck_id||!matchDraft.opponent_legend){toast('Choose both decks before saving');return}matchDraft.status='Completed';matchDraft.updated_at=new Date().toISOString();const index=tracker.matches.findIndex(match=>match.id===matchDraft.id);if(index>=0)tracker.matches[index]=copy(matchDraft);else tracker.matches.unshift(copy(matchDraft));await persist(index>=0?'Match updated':'Match logged');renderDashboard()}
@@ -180,6 +227,9 @@ ROOT.addEventListener('click',event=>{
  else if(button.matches('[data-delete-match]')){const match=tracker.matches.find(item=>item.id===button.dataset.deleteMatch);if(match&&confirm('Delete this match record?')){tracker.matches=tracker.matches.filter(item=>item.id!==match.id);persist('Match deleted');renderDashboard()}}
  else if(button.matches('[data-match-deck]')){matchDraft.deck_id=button.dataset.matchDeck;matchStep='legend';renderMatchWorkspace()}
  else if(button.matches('[data-match-legend]')){matchDraft.opponent_legend=cardSnapshot(catalogCard(button.dataset.matchLegend),1);matchStep='notes';renderMatchWorkspace()}
+ else if(button.matches('[data-key-lens]')){keyCardLens=button.dataset.keyLens;ROOT.querySelectorAll('[data-key-lens]').forEach(item=>item.classList.toggle('active',item===button));const method=ROOT.querySelector('[data-key-method]');if(method)method.textContent=keyLensCopy();const data=opponentMetaCache.get(opponentDotId());if(data)renderOpponentMeta(data)}
+ else if(button.matches('[data-key-board]')){keyCardBoard=button.dataset.keyBoard;ROOT.querySelectorAll('[data-key-board]').forEach(item=>item.classList.toggle('active',item===button));const data=opponentMetaCache.get(opponentDotId());if(data)renderOpponentMeta(data)}
+ else if(button.matches('[data-open-legend-meta]'))document.querySelector('[data-admin-view="meta"]')?.click()
  else if(button.matches('[data-score-step]')){matchStep='score';renderMatchWorkspace()}
  else if(button.matches('[data-notes-step]')){matchStep='notes';renderMatchWorkspace()}
  else if(button.matches('[data-match-back]')){if(matchStep==='deck')renderDashboard();else{matchStep=matchStep==='score'?'notes':matchStep==='notes'?'legend':'deck';renderMatchWorkspace()}}
@@ -191,6 +241,7 @@ ROOT.addEventListener('click',event=>{
  else if(button.matches('[data-save-match]'))saveMatch();
 });
 ROOT.addEventListener('contextmenu',event=>{const score=event.target.closest('[data-score-side]');if(score){event.preventDefault();adjustScore(score.dataset.scoreSide,1)}});
+ROOT.addEventListener('toggle',event=>{if(event.target.matches('[data-key-enablers]'))keyCardsExpanded=event.target.open},true);
 ROOT.addEventListener('dragstart',event=>{const entry=event.target.closest('[data-entry]');if(entry)event.dataTransfer.setData('text/plain',entry.dataset.entry)});
 ROOT.addEventListener('dragover',event=>{const zone=event.target.closest('[data-drop-zone]');if(zone){event.preventDefault();zone.classList.add('drag-over')}});
 ROOT.addEventListener('dragleave',event=>event.target.closest('[data-drop-zone]')?.classList.remove('drag-over'));

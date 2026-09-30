@@ -6,11 +6,14 @@
   <title>Bindery Admin</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="admin.css?v=5">
-  <link rel="stylesheet" href="tracker.css?v=2">
-  <link rel="stylesheet" href="theme.css?v=1">
+  <link rel="stylesheet" href="tracker.css?v=3">
+  <link rel="stylesheet" href="legend-stats.css?v=1">
+  <link rel="stylesheet" href="theme.css?v=2">
   <script src="theme.js?v=2" defer></script>
+  <script src="sidebar.js?v=1" defer></script>
   <script src="admin.js?v=13" defer></script>
-  <script src="tracker.js?v=3" defer></script>
+  <script src="tracker.js?v=5" defer></script>
+  <script src="legend-stats.js?v=1" defer></script>
 </head>
 <body class="admin-body" data-default-theme="dark">
   <section class="login-gate" id="loginGate">
@@ -35,6 +38,7 @@
       <div class="nav-label">Godmode</div>
       <button class="admin-mode-button active" data-admin-home><span class="admin-mode-icon">C</span><span><strong>Collection</strong><small>Add and manage cards</small></span></button>
       <button class="admin-mode-button" data-admin-view="play"><span class="admin-mode-icon">D</span><span><strong>Decks &amp; games</strong><small>Build, play, and review</small></span></button>
+      <button class="admin-mode-button" data-admin-view="meta"><span class="admin-mode-icon">M</span><span><strong>Legend meta</strong><small>Popularity and performance</small></span></button>
     </nav>
 
     <main class="admin-main">
@@ -74,6 +78,12 @@
         <section class="admin-view" id="playView">
           <div id="trackerRoot" class="tracker-root">
             <div class="tracker-loading">Loading your decks and game log&hellip;</div>
+          </div>
+        </section>
+
+        <section class="admin-view" id="metaView">
+          <div id="legendStatsRoot" class="legend-stats-root">
+            <div class="tracker-loading">Preparing Legend analytics&hellip;</div>
           </div>
         </section>
       </section>

@@ -1,2 +1,4 @@
 data/*.json
 data/*.tmp
+data/*.lock
+data/*.txt

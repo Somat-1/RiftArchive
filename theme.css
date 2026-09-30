@@ -11,3 +11,18 @@ html[data-theme=dark] .admin-hero p,html[data-theme=dark] .admin-card>p,html[dat
 html[data-theme=dark] .admin-search input,html[data-theme=dark] .manage-head input,html[data-theme=dark] .import-input,html[data-theme=dark] .search-result,html[data-theme=dark] .manage-row,html[data-theme=dark] .session-item,html[data-theme=dark] .admin-secondary{color:#dce7e1;border-color:#30433a;background:#182720}html[data-theme=dark] .search-result:hover,html[data-theme=dark] .session-item:hover{background:#1d3028}html[data-theme=dark] .session-list,html[data-theme=dark] .session-item{border-color:#293a32}
 html[data-theme=dark] .modal-backdrop{background:#020705d9}html[data-theme=dark] .variant-modal,html[data-theme=dark] .variant-head{color:#e3ebe7;border-color:#304039;background:#13211bf2}html[data-theme=dark] .selected-card,html[data-theme=dark] .allocation-row{border-color:#2d3f36;background:#182720}
 @media(max-width:760px){.theme-toggle{right:18px;bottom:72px}.admin-body .theme-toggle{bottom:18px}}
+
+/* Collapsible left navigation */
+.app,.sidebar,.admin-shell,.admin-mode-nav{transition:grid-template-columns .24s ease,width .24s ease,padding-left .24s ease}
+.sidebar-collapse-toggle{position:absolute;z-index:3;right:-15px;top:82px;width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #3c5b4e;border-radius:50%;color:#f3d47e;background:#122d24;box-shadow:0 6px 18px #07150f55;cursor:pointer;transition:transform .2s ease,background .2s ease}
+.sidebar-collapse-toggle:hover{background:#1b4436}.sidebar-collapse-toggle svg{width:14px;height:14px;transition:transform .24s ease}
+.app.sidebar-is-collapsed{grid-template-columns:76px minmax(0,1fr)}
+.app.sidebar-is-collapsed .sidebar{width:76px;padding-left:12px;padding-right:12px}
+.app.sidebar-is-collapsed .sidebar .brand{justify-content:center;padding-left:0;padding-right:0}
+.app.sidebar-is-collapsed .sidebar .brand>:last-child,.app.sidebar-is-collapsed .sidebar .nav-label,.app.sidebar-is-collapsed .sidebar .nav-button span,.app.sidebar-is-collapsed .sidebar .nav-button small,.app.sidebar-is-collapsed .sidebar .collection-meter{display:none}
+.app.sidebar-is-collapsed .sidebar .nav-button{justify-content:center;padding-left:0;padding-right:0}.app.sidebar-is-collapsed .sidebar .nav-button svg{flex:none}
+.app.sidebar-is-collapsed .sidebar .godmode-link{margin-top:auto}.app.sidebar-is-collapsed .sidebar-collapse-toggle svg{transform:rotate(180deg)}
+.admin-mode-nav .sidebar-collapse-toggle{top:18px}.admin-shell.admin-nav-is-collapsed{padding-left:76px}.admin-shell.admin-nav-is-collapsed .admin-mode-nav{width:76px;padding-left:12px;padding-right:12px;padding-top:58px}
+.admin-shell.admin-nav-is-collapsed .admin-mode-nav>.nav-label,.admin-shell.admin-nav-is-collapsed .admin-mode-button>span:last-child{display:none}.admin-shell.admin-nav-is-collapsed .admin-mode-button{justify-content:center;padding-left:0;padding-right:0}.admin-shell.admin-nav-is-collapsed .sidebar-collapse-toggle svg{transform:rotate(180deg)}
+@media(max-width:760px){.sidebar-collapse-toggle{display:none}.app.sidebar-is-collapsed{display:block}.app.sidebar-is-collapsed .sidebar{display:none}}
+@media(max-width:900px){.admin-mode-nav .sidebar-collapse-toggle{display:none}.admin-shell.admin-nav-is-collapsed{padding-left:0}.admin-shell.admin-nav-is-collapsed .admin-mode-nav{position:sticky;width:auto;padding:8px 14px}.admin-shell.admin-nav-is-collapsed .admin-mode-button>span:last-child{display:grid}}

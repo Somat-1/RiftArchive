@@ -82,7 +82,7 @@ function updateWorkingUI(){
   renderManage();renderSession();
 }
 
-$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));const playMode=button.dataset.adminView==='play';$('.admin-main').classList.toggle('play-mode',playMode);$('[data-admin-home]')?.classList.toggle('active',!playMode);if(button.dataset.adminView==='manage')renderManage();if(playMode)document.dispatchEvent(new CustomEvent('riftarchive:tracker-open'))}));
+$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));const mode=button.dataset.adminView,wideMode=mode==='play'||mode==='meta';$('.admin-main').classList.toggle('play-mode',wideMode);$('[data-admin-home]')?.classList.toggle('active',!wideMode);if(mode==='manage')renderManage();if(mode==='play')document.dispatchEvent(new CustomEvent('riftarchive:tracker-open'));if(mode==='meta')document.dispatchEvent(new CustomEvent('riftarchive:legend-stats-open'))}));
 $('[data-admin-home]')?.addEventListener('click',()=>{$('[data-admin-view=single]').click();$('[data-admin-home]').classList.add('active')});
 
 $('#singleSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(renderSearch,180)});
