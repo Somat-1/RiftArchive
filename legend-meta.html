@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Legend Meta — Riftbound Tournament Insights</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="navigation.css">
+  <link rel="stylesheet" href="legend-stats.css?v=2">
+  <link rel="stylesheet" href="theme.css?v=2">
+  <script src="theme.js?v=2" defer></script>
+  <script src="sidebar.js?v=1" defer></script>
+  <script src="legend-stats.js?v=2" defer></script>
+</head>
+<body class="legend-meta-body" data-legend-stats-mode="public">
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand brand-link" href="index.html"><div class="brand-mark">B</div><div><div class="brand-name">BINDERY</div><small class="brand-kicker">Riftbound archive</small></div></a>
+    <div class="nav-label">Collection</div>
+    <nav class="nav">
+      <a class="nav-button" href="index.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Browse All</span><small class="shortcut">B</small></a>
+      <a class="nav-button" href="index.html#deck"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="m7 4 13 4-4 13L3 17 7 4Z"/><path d="m9.5 8.5 5 1.5M8.5 12l7 2"/></svg><span>Deck Search</span><small class="shortcut">D</small></a>
+      <a class="nav-button" href="git-gud.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Git Gud</span><small class="shortcut">G</small></a>
+      <a class="nav-button active" href="legend-meta.html"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/><path d="M2 19h22"/></svg><span>Legend Meta</span><small class="shortcut">M</small></a>
+    </nav>
+    <div class="collection-meter"><div class="meter-head"><strong>Tournament data</strong><span>cached</span></div><div class="meter-copy">Read-only public insights. Refreshing remains protected in Godmode.</div></div>
+    <a class="nav-button godmode-link" href="admin.html" aria-label="Open Godmode collection admin"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg><span>Godmode</span><small class="shortcut">Admin</small></a>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div class="crumbs">Bindery&nbsp; / &nbsp;<b>Legend Meta</b></div><div class="load-status ready">Cached tournament intelligence</div></header>
+    <section class="page legend-meta-page"><div id="legendStatsRoot" class="legend-stats-root"><div class="tracker-loading">Preparing Legend analytics&hellip;</div></div></section>
+  </main>
+</div>
+<nav class="mobile-bar"><a href="index.html">Browse</a><a href="index.html#deck">Decks</a><a href="git-gud.html">Git Gud</a><a class="active" href="legend-meta.html">Meta</a><a href="admin.html">Godmode</a></nav>
+</body>
+</html>

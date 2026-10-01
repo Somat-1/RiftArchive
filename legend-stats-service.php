@@ -7,7 +7,6 @@ define('LEGEND_STATS_MAX_PAGES', 2);
 define('LEGEND_STATS_PAGE_SIZE', 30);
 
 function handleLegendStatsGet() {
-    if (!isAdmin()) { sendJson(array('error' => 'authentication required'), 401); }
     $id = lsLegendId(isset($_GET['legend_id']) ? $_GET['legend_id'] : '');
     if ($id === '') { sendJson(array('error' => 'valid legend_id required'), 400); }
     $path = lsCachePath($id);

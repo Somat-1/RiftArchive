@@ -1,5 +1,8 @@
 const GG_PAGE_SIZE=48;
-if(new URLSearchParams(location.search).get('embed')==='1')document.body.classList.add('embedded');
+const GG_PARAMS=new URLSearchParams(location.search);
+const GG_EMBEDDED=GG_PARAMS.get('embed')==='1';
+const GG_PRESET_DOMAINS=GG_PARAMS.get('domains')?.split(',').map(value=>value.trim()).filter(Boolean)||[];
+if(GG_EMBEDDED)document.body.classList.add('embedded');
 const GG_KEYWORDS=['Hidden','Action','Reaction','Ambush','Quick-Draw','Accelerate'];
 const GG_DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order'];
 const GG_BANNED_NAMES=new Set([
@@ -51,6 +54,7 @@ async function loadGitGud(){
     ggCards=playableUniqueCards(Array.isArray(data.cards)?data.cards:[]);
     buildKeywordFilters();
     buildDomainFilters();
+    applyPresetDomains();
     buildEnergyFilters();
     bindGitGudEvents();
     $('#ggTotal').textContent=`${ggCards.length} cards`;
@@ -99,6 +103,20 @@ function buildDomainFilters(){
     ggPage=1;
     renderGitGud();
   }));
+}
+
+function applyPresetDomains(){
+  GG_PRESET_DOMAINS.filter(domain=>GG_DOMAINS.includes(domain)).forEach(domain=>activeDomains.add(domain));
+  $$('#ggDomainFilters button').forEach(button=>{
+    const active=activeDomains.has(button.dataset.domain);
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-pressed',String(active));
+  });
+  const scope=$('#ggDomainScope');
+  if(scope&&GG_PRESET_DOMAINS.length){
+    scope.hidden=false;
+    scope.innerHTML=`<span>Matchup scope</span><strong>${GG_PRESET_DOMAINS.map(escapeHtml).join(' + ')}</strong>`;
+  }
 }
 
 function buildEnergyFilters(){
@@ -195,12 +213,14 @@ function renderGitGudPagination(pages){
 function clearGitGudFilters(){
   activeKeywords.clear();
   activeDomains.clear();
+  GG_PRESET_DOMAINS.filter(domain=>GG_DOMAINS.includes(domain)).forEach(domain=>activeDomains.add(domain));
   $('#ggSearch').value='';
   $('#ggMinEnergy').value='';
   $('#ggMaxEnergy').value='';
   $('#ggNoCost').checked=true;
   $('#ggSort').value='energy-asc';
-  $$('#ggKeywordFilters button, #ggDomainFilters button').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false')});
+  $$('#ggKeywordFilters button').forEach(button=>{button.classList.remove('active');button.setAttribute('aria-pressed','false')});
+  $$('#ggDomainFilters button').forEach(button=>{const active=activeDomains.has(button.dataset.domain);button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
   ggPage=1;
   renderGitGud();
 }

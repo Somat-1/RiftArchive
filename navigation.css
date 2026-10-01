@@ -2,5 +2,5 @@
 .brand-link{color:inherit}
 
 @media(max-width:760px){
-  .mobile-bar{grid-template-columns:repeat(4,1fr)}
+  .mobile-bar{grid-template-columns:repeat(5,1fr)}
 }
