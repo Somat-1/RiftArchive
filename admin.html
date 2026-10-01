@@ -9,9 +9,10 @@
   <link rel="stylesheet" href="tracker.css?v=3">
   <link rel="stylesheet" href="legend-stats.css?v=1">
   <link rel="stylesheet" href="theme.css?v=2">
+  <link rel="stylesheet" href="admin-modern.css?v=1">
   <script src="theme.js?v=2" defer></script>
   <script src="sidebar.js?v=1" defer></script>
-  <script src="admin.js?v=13" defer></script>
+  <script src="admin.js?v=14" defer></script>
   <script src="tracker.js?v=5" defer></script>
   <script src="legend-stats.js?v=1" defer></script>
 </head>
@@ -106,9 +107,29 @@
     <section class="variant-modal" role="dialog" aria-modal="true" aria-labelledby="variantTitle">
       <header class="variant-head"><div><div class="step-label" id="variantStep">Configure inventory</div><h2 id="variantTitle">Card name</h2><p id="variantHint"></p></div><button class="modal-close" id="closeVariant" aria-label="Close">×</button></header>
       <div class="selected-card" id="selectedCard"></div>
-      <div class="allocation-total"><label>Total copies<input id="requestedTotal" type="number" min="1" value="1"></label><span id="allocationStatus"></span></div>
+      <section class="inventory-overview" aria-label="Inventory quantity">
+        <div class="inventory-stat">
+          <span>Currently in collection</span>
+          <strong id="currentOwned">0</strong>
+          <small id="ownedBreakdown">No inventory records yet</small>
+        </div>
+        <div class="quantity-editor">
+          <span id="quantityLabel">Collection total</span>
+          <div class="quantity-stepper">
+            <button id="decreaseTotal" type="button" aria-label="Decrease quantity">−</button>
+            <input id="requestedTotal" type="number" min="0" value="1" inputmode="numeric" aria-label="Quantity after saving">
+            <button id="increaseTotal" type="button" aria-label="Increase quantity">+</button>
+          </div>
+          <small id="allocationStatus"></small>
+        </div>
+        <div class="inventory-stat inventory-after">
+          <span>After saving</span>
+          <strong id="afterOwned">1</strong>
+          <small id="inventoryDelta">+1 copy</small>
+        </div>
+      </section>
       <div class="allocation-list" id="allocationList"></div>
-      <button class="add-split" id="addSplit">+ Split across another version / language</button>
+      <button class="add-split" id="addSplit" type="button">+ Add another printing, language, or finish</button>
       <footer class="modal-actions"><button class="admin-secondary" id="cancelVariant">Cancel</button><button class="admin-primary" id="saveVariant">Add to working copy</button></footer>
     </section>
   </div>

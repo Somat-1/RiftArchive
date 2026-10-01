@@ -13,6 +13,7 @@ const languageCode=value=>{const normalized=normalize(value);return Object.entri
 
 let database=null,originalCards=[],workingCards=[],catalog=[],catalogReady=false;
 let sessionLog=[],searchTimer=null,currentEditor=null,allocations=[],importQueue=[],importCompleted=0,pendingCsvImport=false,csvImportRunning=false,lastImportedCsvText=null,catalogLoading=false;
+let modalReturnFocus=null,zeroAllocationTemplate=null;
 
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2400)}
 
@@ -93,55 +94,102 @@ function groupedMatches(query){
   catalog.filter(card=>normalize(baseName(card.name)).includes(q)||q.split(' ').every(t=>normalize(card.name).includes(t))).forEach(card=>{const key=normalize(baseName(card.name));if(!groups.has(key))groups.set(key,[]);groups.get(key).push(card)});
   return [...groups.values()].sort((a,b)=>relevance(a[0].name,query)-relevance(b[0].name,query)||a[0].name.localeCompare(b[0].name)).slice(0,12);
 }
+function inventoryKey(name){return normalize(baseName(displayName(name)))}
+function ownedRecordsFor(versions){
+  const first=preferredVersion(versions),key=inventoryKey(first?.name||'');
+  return workingCards.filter(card=>inventoryKey(card.name)===key);
+}
+function ownedQuantity(records){return records.reduce((sum,card)=>sum+Number(card.quantity||0),0)}
 function renderSearch(){
   const query=$('#singleSearch').value.trim(),host=$('#searchResults');
   if(!query){host.innerHTML='<div class="admin-empty">The Riftcodex catalog will appear here as you type.</div>';return}
   if(!catalogReady){host.innerHTML='<div class="admin-empty">Riftcodex is still loading. Try again in a moment.</div>';return}
   const groups=groupedMatches(query);
-  host.innerHTML=groups.length?groups.map((versions,index)=>{const card=preferredVersion(versions);return `<button class="search-result" data-result="${index}"><img src="${esc(card.media.image_url)}" alt=""><span><strong>${esc(displayName(card.name))}</strong><small>${esc(card.set.label)} · ${esc(card.classification.type)} · ${esc((card.classification.domain||[]).join(' / '))}</small></span><span class="version-count">${versions.length} version${versions.length===1?'':'s'}</span></button>`}).join(''):'<div class="admin-empty">No close Riftcodex match was found.</div>';
-  $$('.search-result').forEach(button=>button.addEventListener('click',()=>openEditor({versions:groups[Number(button.dataset.result)],requested:1,mode:'add'})));
+  host.innerHTML=groups.length?groups.map((versions,index)=>{const card=preferredVersion(versions),owned=ownedQuantity(ownedRecordsFor(versions));return `<button class="search-result" type="button" data-result="${index}"><img src="${esc(card.media.image_url)}" alt="" loading="lazy" decoding="async"><span><strong>${esc(displayName(card.name))}</strong><small>${esc(card.set.label)} · ${esc(card.classification.type)} · ${esc((card.classification.domain||[]).join(' / '))}</small></span><span class="search-result-meta"><span class="owned-count-chip">${owned} owned</span><span class="version-count">${versions.length} version${versions.length===1?'':'s'}</span></span></button>`}).join(''):'<div class="admin-empty">No close Riftcodex match was found.</div>';
+  $$('.search-result').forEach(button=>button.addEventListener('click',()=>openEditor({versions:groups[Number(button.dataset.result)],mode:'inventory'})));
 }
 
 function preferredVersion(versions){return versions.find(card=>!card.metadata?.alternate_art&&!card.metadata?.overnumbered&&!card.metadata?.signature&&!/\(Metal\)$/i.test(card.name))||versions[0]}
 function versionLabel(card){if(card.metadata?.alternate_art)return'Alternate Art';if(card.metadata?.overnumbered)return'Overnumbered';if(card.metadata?.signature)return'Signature';if(/\(Metal\)$/i.test(card.name))return'Metal';if(card.classification?.rarity==='Promo')return'Promo';return'Standard'}
 function versionOption(card){return `${versionLabel(card)} · ${card.set.set_id} #${card.collector_number} · ${card.classification.rarity}`}
 
+function inventoryMetadata(card){return{condition:card.condition,grading:card.grading,notes:card.notes,importReference:card.import_reference}}
+function allocationFromRecord(record,versions){
+  const version=versions.find(card=>card.riftbound_id===record.riftbound_id)||preferredVersion(versions);
+  return{versionId:version.riftbound_id,quantity:Math.max(1,Number(record.quantity)||1),language:record.language||'en',english:(record.language||'en')==='en',foil:Boolean(record.foil),sourceId:record.collection_id,inventoryMetadata:inventoryMetadata(record)};
+}
+function defaultAllocation(quantity=1){
+  return{versionId:preferredVersion(currentEditor.versions).riftbound_id,quantity:Math.max(1,Number(quantity)||1),language:'fr',english:true,foil:false};
+}
 function openEditor(options){
-  currentEditor=options;const versions=options.versions,first=preferredVersion(versions),existing=options.existing;
-  allocations=options.initialAllocations?clone(options.initialAllocations):existing?[{versionId:existing.riftbound_id,quantity:existing.quantity,language:existing.language||'en',english:(existing.language||'en')==='en',foil:Boolean(existing.foil)}]:[{versionId:first.riftbound_id,quantity:options.requested||1,language:'fr',english:true,foil:false}];
-  $('#requestedTotal').value=options.requested||existing?.quantity||1;
+  const versions=options.versions,first=preferredVersion(versions),existing=options.existing,inventoryMode=options.mode==='inventory';
+  const ownedRecords=ownedRecordsFor(versions),baselineOwned=ownedQuantity(ownedRecords);
+  currentEditor={...options,inventoryMode,ownedRecords,baselineOwned};
+  allocations=options.initialAllocations?clone(options.initialAllocations):existing?[allocationFromRecord(existing,versions)]:inventoryMode&&ownedRecords.length?ownedRecords.map(card=>allocationFromRecord(card,versions)):[{versionId:first.riftbound_id,quantity:options.requested||1,language:'fr',english:true,foil:false}];
+  const requested=inventoryMode?(baselineOwned||1):(options.requested||existing?.quantity||1);
+  $('#requestedTotal').min=inventoryMode&&baselineOwned?'0':'1';$('#requestedTotal').value=requested;
+  zeroAllocationTemplate=clone(allocations[0]||{versionId:first.riftbound_id,quantity:1,language:'fr',english:true,foil:false});
   $('#variantTitle').textContent=displayName(first.name);
-  $('#variantStep').textContent=options.fromImport?`Import ${importCompleted+1} of ${importCompleted+importQueue.length+1}`:existing?'Edit inventory record':'Configure inventory';
+  $('#variantStep').textContent=options.fromImport?`Import ${importCompleted+1} of ${importCompleted+importQueue.length+1}`:inventoryMode?'Collection inventory':existing?'Edit inventory record':'Configure inventory';
   const imported=options.inventoryMetadata,importDetails=imported?[imported.condition,imported.grading?.company&&`Graded by ${imported.grading.company}`,imported.notes].filter(Boolean).join(' · '):'';
-  $('#variantHint').textContent=`${versions.length} printing${versions.length===1?'':'s'} available · quantities can be split${importDetails?' · '+importDetails:''}`;
-  $('#selectedCard').innerHTML=`<img src="${esc(first.media.image_url)}" alt=""><div><strong>${esc(displayName(first.name))}</strong><small>${esc(first.set.label)} · ${esc((first.classification.domain||[]).join(' / '))}</small></div>`;
+  $('#variantHint').textContent=`${versions.length} printing${versions.length===1?'':'s'} available · split copies by printing, language, or finish${importDetails?' · '+importDetails:''}`;
+  $('#selectedCard').innerHTML=`<img src="${esc(first.media.image_url)}" alt="" decoding="async"><div><strong>${esc(displayName(first.name))}</strong><small>${esc(first.set.label)} · ${esc((first.classification.domain||[]).join(' / '))}</small></div>`;
   $('#saveVariant').textContent=existing?'Save changes':options.fromImport?'Save and review next':'Add to working copy';
-  renderAllocations();$('#variantModal').hidden=false;
+  modalReturnFocus=document.activeElement;document.body.classList.add('modal-open');$('#variantModal').hidden=false;renderAllocations();
+  requestAnimationFrame(()=>$('#requestedTotal').focus());
 }
 
 function renderAllocations(){
   const host=$('#allocationList'),versions=currentEditor.versions;
-  host.innerHTML=allocations.map((entry,index)=>`<div class="allocation-row" data-allocation="${index}">
-    <label>Printing<select data-field="version">${versions.map(card=>`<option value="${esc(card.riftbound_id)}" ${card.riftbound_id===entry.versionId?'selected':''}>${esc(versionOption(card))}</option>`).join('')}</select></label>
-    <label>Quantity<input data-field="quantity" type="number" min="1" value="${entry.quantity}"></label>
-    <label class="english-check"><input data-field="english" type="checkbox" ${entry.english?'checked':''}> ${flag('en')} English</label>
-    <label>Other language<select data-field="language" ${entry.english?'disabled':''}>${Object.entries(LANGUAGES).filter(([code])=>code!=='en').map(([code,data])=>`<option value="${code}" ${entry.language===code?'selected':''}>${flag(code)} ${data[0]}</option>`).join('')}</select></label>
-    <button class="remove-split" data-remove="${index}" title="Remove split" ${allocations.length===1?'disabled':''}>×</button>
-    <label class="english-check"><input data-field="foil" type="checkbox" ${entry.foil?'checked':''}> Foil finish</label>
-  </div>`).join('');
-  $$('.allocation-row').forEach(row=>row.addEventListener('change',event=>{const index=Number(row.dataset.allocation),field=event.target.dataset.field;if(!field)return;if(field==='quantity')allocations[index].quantity=Math.max(1,Number(event.target.value)||1);else if(field==='english'){allocations[index].english=event.target.checked;event.target.closest('.allocation-row').querySelector('[data-field=language]').disabled=event.target.checked}else if(field==='foil')allocations[index].foil=event.target.checked;else allocations[index][field]=event.target.value;updateAllocationStatus()}));
-  $$('[data-remove]').forEach(button=>button.addEventListener('click',()=>{allocations.splice(Number(button.dataset.remove),1);renderAllocations()}));
+  host.innerHTML=allocations.length?allocations.map((entry,index)=>`<div class="allocation-row" data-allocation="${index}">
+    <div class="allocation-row-head"><span>Configuration ${index+1}</span><button class="remove-split" type="button" data-remove="${index}" ${allocations.length===1?'disabled':''}>Remove</button></div>
+    <label class="allocation-field">Printing<select data-field="version">${versions.map(card=>`<option value="${esc(card.riftbound_id)}" ${card.riftbound_id===entry.versionId?'selected':''}>${esc(versionOption(card))}</option>`).join('')}</select></label>
+    <label class="allocation-field">Quantity<input data-field="quantity" type="number" min="1" value="${entry.quantity}" inputmode="numeric"></label>
+    <div class="allocation-options">
+      <label class="choice-toggle"><input data-field="english" type="checkbox" ${entry.english?'checked':''}><span class="choice-box">✓</span><span>${flag('en')} English</span></label>
+      <label class="choice-toggle"><input data-field="foil" type="checkbox" ${entry.foil?'checked':''}><span class="choice-box">✓</span><span>Foil finish</span></label>
+      <label class="allocation-field language-select ${entry.english?'is-disabled':''}">Other language<select data-field="language" ${entry.english?'disabled':''}>${Object.entries(LANGUAGES).filter(([code])=>code!=='en').map(([code,data])=>`<option value="${code}" ${entry.language===code?'selected':''}>${flag(code)} ${data[0]}</option>`).join('')}</select></label>
+    </div>
+  </div>`).join(''):'<div class="allocation-empty"><strong>Zero copies selected.</strong><br>Saving will remove this card from the working collection.</div>';
+  host.querySelectorAll('.allocation-row').forEach(row=>{
+    row.addEventListener('input',event=>{if(event.target.dataset.field!=='quantity')return;const index=Number(row.dataset.allocation);allocations[index].quantity=Math.max(1,Number(event.target.value)||1);updateAllocationStatus()});
+    row.addEventListener('change',event=>{const index=Number(row.dataset.allocation),field=event.target.dataset.field;if(!field||field==='quantity')return;if(field==='english'){allocations[index].english=event.target.checked;const language=row.querySelector('[data-field=language]');language.disabled=event.target.checked;language.closest('.language-select').classList.toggle('is-disabled',event.target.checked)}else if(field==='foil')allocations[index].foil=event.target.checked;else allocations[index][field]=event.target.value;updateAllocationStatus()});
+  });
+  host.querySelectorAll('[data-remove]').forEach(button=>button.addEventListener('click',()=>{const removed=allocations.splice(Number(button.dataset.remove),1)[0];if(allocations.length)allocations[0].quantity+=Number(removed.quantity||0);renderAllocations()}));
   updateAllocationStatus();
 }
 
 function updateAllocationStatus(){
-  const total=Number($('#requestedTotal').value)||0,allocated=allocations.reduce((sum,row)=>sum+Number(row.quantity||0),0),status=$('#allocationStatus');
-  status.textContent=`${allocated} of ${total} copies allocated`;status.style.color=allocated===total?'#2d765c':'#b84a43';$('#saveVariant').disabled=allocated!==total||total<1;
+  if(!currentEditor)return;
+  const total=Math.max(0,Number($('#requestedTotal').value)||0),allocated=allocations.reduce((sum,row)=>sum+Number(row.quantity||0),0),status=$('#allocationStatus');
+  const minimum=currentEditor.inventoryMode&&currentEditor.baselineOwned?0:1,valid=allocated===total&&total>=minimum;
+  const existingQuantity=Number(currentEditor.existing?.quantity||0),after=currentEditor.inventoryMode?total:currentEditor.existing?currentEditor.baselineOwned-existingQuantity+total:currentEditor.baselineOwned+total;
+  const delta=after-currentEditor.baselineOwned,recordCount=currentEditor.ownedRecords.length;
+  $('#currentOwned').textContent=currentEditor.baselineOwned;$('#ownedBreakdown').textContent=recordCount?`${recordCount} inventory record${recordCount===1?'':'s'}`:'Not yet in the collection';
+  $('#quantityLabel').textContent=currentEditor.inventoryMode?'Collection total':currentEditor.existing?'Record quantity':'Copies to add';
+  $('#afterOwned').textContent=after;$('#inventoryDelta').textContent=delta===0?'No count change':`${delta>0?'+':''}${delta} cop${Math.abs(delta)===1?'y':'ies'}`;
+  status.textContent=valid?`${allocated} ${allocated===1?'copy':'copies'} configured`:`Configure ${total-allocated>0?total-allocated+' more':Math.abs(total-allocated)+' fewer'} ${Math.abs(total-allocated)===1?'copy':'copies'}`;
+  status.classList.toggle('is-valid',valid);status.classList.toggle('is-invalid',!valid);$('#saveVariant').disabled=!valid;
+  $('#decreaseTotal').disabled=total<=minimum;$('#addSplit').disabled=total===0;
+  if(currentEditor.inventoryMode)$('#saveVariant').textContent=total===0?'Remove from collection':currentEditor.baselineOwned?'Save collection':'Add to collection';
+}
+function setEditorTotal(value){
+  if(!currentEditor)return;const minimum=currentEditor.inventoryMode&&currentEditor.baselineOwned?0:1,next=Math.min(999,Math.max(minimum,Math.round(Number(value)||0)));
+  let allocated=allocations.reduce((sum,row)=>sum+Number(row.quantity||0),0);
+  if(next>allocated){if(!allocations.length){const seed=clone(zeroAllocationTemplate||defaultAllocation(1));seed.quantity=next;allocations.push(seed)}else allocations[0].quantity+=next-allocated}
+  else if(next<allocated){let remove=allocated-next;for(let index=allocations.length-1;index>=0&&remove>0;index--){const take=Math.min(remove,allocations[index].quantity);allocations[index].quantity-=take;remove-=take;if(allocations[index].quantity<=0)allocations.splice(index,1)}}
+  $('#requestedTotal').value=next;renderAllocations();
 }
 $('#requestedTotal').addEventListener('input',updateAllocationStatus);
-$('#addSplit').addEventListener('click',()=>{if(allocations[0].quantity>1)allocations[0].quantity--;allocations.push({versionId:currentEditor.versions[0].riftbound_id,quantity:1,language:'fr',english:true,foil:false});renderAllocations()});
+$('#requestedTotal').addEventListener('change',event=>setEditorTotal(event.target.value));
+$('#decreaseTotal').addEventListener('click',()=>setEditorTotal((Number($('#requestedTotal').value)||0)-1));
+$('#increaseTotal').addEventListener('click',()=>setEditorTotal((Number($('#requestedTotal').value)||0)+1));
+$('#addSplit').addEventListener('click',()=>{let donor=allocations.find(row=>row.quantity>1);if(!donor){setEditorTotal((Number($('#requestedTotal').value)||0)+1);donor=allocations.find(row=>row.quantity>1)}if(donor)donor.quantity--;allocations.push(defaultAllocation(1));renderAllocations()});
 $('#closeVariant').addEventListener('click',cancelEditor);$('#cancelVariant').addEventListener('click',cancelEditor);
-function cancelEditor(){const continuing=currentEditor?.fromImport;$('#variantModal').hidden=true;currentEditor=null;if(continuing)openNextImport()}
+$('#variantModal').addEventListener('click',event=>{if(event.target===$('#variantModal'))cancelEditor()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#variantModal').hidden)cancelEditor()});
+function closeEditor(){$('#variantModal').hidden=true;document.body.classList.remove('modal-open');currentEditor=null;zeroAllocationTemplate=null;modalReturnFocus?.focus?.();modalReturnFocus=null}
+function cancelEditor(){const continuing=currentEditor?.fromImport;closeEditor();if(continuing)openNextImport()}
 
 function inventoryFromApi(card,allocation,suffix,inventoryMetadata){
   const language=allocation.english?'en':allocation.language,importedLabel=inventoryMetadata?.importReference?.variant_label,version=importedLabel&&normalize(importedLabel)!=='standard'?importedLabel:versionLabel(card);
@@ -151,19 +199,23 @@ function inventoryFromApi(card,allocation,suffix,inventoryMetadata){
 
 $('#saveVariant').addEventListener('click',()=>{
   const total=Number($('#requestedTotal').value),allocated=allocations.reduce((sum,row)=>sum+Number(row.quantity),0);if(total!==allocated)return;
-  const existing=currentEditor.existing,wasImport=currentEditor.fromImport;
-  if(existing){const index=workingCards.findIndex(card=>card.collection_id===existing.collection_id);if(index>=0)workingCards.splice(index,1)}
+  const editor=currentEditor,existing=editor.existing,wasImport=editor.fromImport,inventoryMode=editor.inventoryMode;
+  if(inventoryMode){const ownedIds=new Set(editor.ownedRecords.map(card=>card.collection_id));workingCards=workingCards.filter(card=>!ownedIds.has(card.collection_id))}
+  else if(existing){const index=workingCards.findIndex(card=>card.collection_id===existing.collection_id);if(index>=0)workingCards.splice(index,1)}
   const added=allocations.map((allocation,index)=>{
-    const metadata=currentEditor.inventoryMetadata||existing&&{condition:existing.condition,grading:existing.grading,notes:existing.notes,importReference:existing.import_reference};
-    const card=inventoryFromApi(currentEditor.versions.find(card=>card.riftbound_id===allocation.versionId),allocation,index,metadata);
+    const metadata=allocation.inventoryMetadata||editor.inventoryMetadata||existing&&inventoryMetadata(existing);
+    const apiCard=editor.versions.find(card=>card.riftbound_id===allocation.versionId)||preferredVersion(editor.versions);
+    const card=inventoryFromApi(apiCard,allocation,index,metadata);
     // Keep the first record's stable ID while editing so older session entries remain clickable.
-    if(existing&&index===0)card.collection_id=existing.collection_id;
+    if(allocation.sourceId)card.collection_id=allocation.sourceId;else if(existing&&index===0)card.collection_id=existing.collection_id;
     return card;
   });
   workingCards.push(...added);
-  added.forEach(card=>sessionLog.unshift({action:existing?'edited':'added',collectionId:card.collection_id,name:card.name}));
-  $('#variantModal').hidden=true;currentEditor=null;if(wasImport)importCompleted++;
-  updateWorkingUI();toast(existing?'Inventory record updated':'Card added to working copy');if(wasImport)openNextImport();
+  if(inventoryMode&&!added.length){const removed=editor.ownedRecords[0];if(removed)sessionLog.unshift({action:'removed',collectionId:removed.collection_id,name:removed.name,snapshot:removed})}
+  else added.forEach(card=>sessionLog.unshift({action:inventoryMode&&editor.baselineOwned||existing?'edited':'added',collectionId:card.collection_id,name:card.name}));
+  const message=inventoryMode?(total===0?'Card removed from working collection':editor.baselineOwned?'Collection count updated':'Card added to working collection'):existing?'Inventory record updated':'Card added to working copy';
+  closeEditor();if(wasImport)importCompleted++;
+  updateWorkingUI();if(inventoryMode)renderSearch();toast(message);if(wasImport)openNextImport();
 });
 
 function parseImport(text){
