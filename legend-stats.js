@@ -34,7 +34,7 @@ function renderLoading(){ROOT.innerHTML='<div class="tracker-loading">Preparing 
 function renderShell(){
  ROOT.innerHTML=`<header class="meta-head"><div><div class="step-label">Tournament intelligence</div><h1>Legend meta lab</h1><p>Find the cards that define a Legend across recent, legal tournament decklists.</p></div><div class="meta-source">Cache-backed <span></span> DotGG</div></header>
  <section class="meta-picker"><header><div><div class="step-label">Choose a Legend</div><h2>Browse the field</h2><p>One representative artwork is shown for each Legend.</p></div><label class="meta-picker-search"><span>Find Legend</span><input data-meta-legend-search type="search" placeholder="Search Legends…" autocomplete="off"></label></header><div class="meta-legend-grid" data-meta-legend-grid>${legendPickerCards()}</div></section>
- ${PUBLIC_MODE?'':`<section class="meta-toolbar"><label>Sample window<select data-meta-days><option value="30">30 days</option><option value="90">90 days</option><option value="180" selected>180 days</option><option value="365">365 days</option></select></label><button class="admin-primary" data-meta-refresh disabled>Refresh selected Legend</button></section>`}
+ <section class="meta-toolbar"><label>Sample window<select data-meta-days><option value="30">30 days</option><option value="90">90 days</option><option value="180" selected>180 days</option><option value="365">365 days</option></select></label><button class="meta-action" data-meta-refresh disabled>${PUBLIC_MODE?'Generate preview':'Refresh selected Legend'}</button></section>
  <div data-meta-content>${emptyState()}</div>`;
  ROOT.addEventListener('change',handleChange);ROOT.addEventListener('input',handleInput);ROOT.addEventListener('click',handleClick);
 }
@@ -44,7 +44,7 @@ function legendPickerCards(filter=''){
  return visible.length?visible.map(card=>`<button type="button" class="meta-legend-option ${dotId(card)===selected?'selected':''}" data-meta-legend="${esc(dotId(card))}" aria-pressed="${dotId(card)===selected}"><span><img src="${esc(imageOf(card))}" alt="" loading="lazy" decoding="async"></span><strong>${esc(canonical(card.name))}</strong><small>${esc((card.classification?.domain||[]).join(' / ')||'Colorless')}</small></button>`).join(''):'<div class="meta-no-legends">No Legends match that search.</div>';
 }
 function renderLegendPicker(filter=''){const host=ROOT.querySelector('[data-meta-legend-grid]');if(host)host.innerHTML=legendPickerCards(filter)}
-function emptyState(){return `<section class="meta-empty"><div class="meta-empty-mark">M</div><h2>Select a Legend above</h2><p>${PUBLIC_MODE?'Choose a portrait to open the latest cached tournament analysis. Only the owner can refresh external data.':'Choose a portrait, then build or refresh its safely rate-limited tournament sample.'}</p><div><span>Unique decklists</span><span>Popularity signals</span><span>Top-finish comparison</span></div></section>`}
+function emptyState(){return `<section class="meta-empty"><div class="meta-empty-mark">M</div><h2>Select a Legend above</h2><p>Choose a portrait to open its saved analysis or generate a safely rate-limited tournament preview.</p><div><span>Unique decklists</span><span>Popularity signals</span><span>Top-finish comparison</span></div></section>`}
 
 function handleChange(){}
 function handleInput(event){if(event.target.matches('[data-meta-search]')){query=event.target.value;renderResults()}if(event.target.matches('[data-meta-legend-search]'))renderLegendPicker(event.target.value)}
@@ -59,17 +59,17 @@ async function loadCached(){
  const requested=selected,sequence=++loadSequence;
  setContentStatus('Loading the saved analysis&hellip;');
  try{const response=await fetch(`api.php?action=legend_stats&legend_id=${encodeURIComponent(requested)}`,{cache:'no-store'});const result=await response.json();if(sequence!==loadSequence||requested!==selected)return;if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);payload=result;syncDays();renderResults()}
- catch(error){if(sequence!==loadSequence||requested!==selected)return;ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty"><div class="meta-empty-mark">+</div><h2>No analysis cached yet</h2><p>${esc(error.message)} ${PUBLIC_MODE?'The owner can build this sample from Godmode.':'Choose a sample window and run the first refresh.'}</p>${PUBLIC_MODE?'':'<button class="admin-primary" data-meta-refresh>Build analysis</button>'}</section>`}
+ catch(error){if(sequence!==loadSequence||requested!==selected)return;ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty"><div class="meta-empty-mark">+</div><h2>No analysis cached yet</h2><p>${esc(error.message)} Generate a preview from recent tournament lists.</p><button class="meta-action" data-meta-refresh>Generate preview</button></section>`}
 }
 
 async function refresh(){
- if(PUBLIC_MODE||!selected||busy)return;busy=true;const requested=selected,buttons=[...ROOT.querySelectorAll('[data-meta-refresh]')];buttons.forEach(button=>{button.disabled=true;button.textContent='Sampling tournament decks…'});setContentStatus('Contacting DotGG through the rate-limited server pipeline&hellip;');
+ if(!selected||busy)return;busy=true;const requested=selected,buttons=[...ROOT.querySelectorAll('[data-meta-refresh]')];buttons.forEach(button=>{button.disabled=true;button.textContent='Sampling tournament decks…'});setContentStatus('Contacting DotGG through the rate-limited server pipeline&hellip;');
  const legend=legends.find(card=>dotId(card)===requested),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),75000);
  try{
   const response=await fetch('api.php?action=legend_stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({legend_id:requested,legend_name:canonical(legend?.name||requested),days:Number(ROOT.querySelector('[data-meta-days]')?.value||180)}),signal:controller.signal});
   const result=await response.json();if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);payload=result;syncDays();renderResults();
- }catch(error){ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty error"><div class="meta-empty-mark">!</div><h2>Refresh unavailable</h2><p>${esc(error.name==='AbortError'?'The refresh timed out safely. Try again later.':error.message)}</p><button class="admin-secondary" data-meta-refresh>Try again</button></section>`}
- finally{clearTimeout(timer);busy=false;ROOT.querySelectorAll('[data-meta-refresh]').forEach(button=>{button.disabled=false;button.textContent='Refresh selected Legend'})}
+ }catch(error){ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty error"><div class="meta-empty-mark">!</div><h2>Preview unavailable</h2><p>${esc(error.name==='AbortError'?'The refresh timed out safely. Try again later.':error.message)}</p><button class="meta-action secondary" data-meta-refresh>Try again</button></section>`}
+ finally{clearTimeout(timer);busy=false;ROOT.querySelectorAll('[data-meta-refresh]').forEach(button=>{button.disabled=false;button.textContent=PUBLIC_MODE?'Generate preview':'Refresh selected Legend'})}
 }
 function setContentStatus(message){ROOT.querySelector('[data-meta-content]').innerHTML=`<div class="tracker-loading">${message}</div>`}
 function syncDays(){const field=ROOT.querySelector('[data-meta-days]');if(field&&payload?.sample?.window_days)field.value=String(payload.sample.window_days)}
@@ -88,6 +88,7 @@ function renderResults(){
 function renderTable(){
  const host=ROOT.querySelector('[data-meta-table]');if(!host||!payload)return;
  let cards=mode==='sideboard'?(payload.cards?.sideboard||[]):(payload.cards?.main||[]);
+ cards=cards.filter(card=>String(card.type||'').toLowerCase()!=='battlefield');
  if(mode==='performing')cards=cards.filter(card=>Number.isFinite(card.top_16_lift)&&card.top_deck_count>=2).slice().sort((a,b)=>b.top_16_lift-a.top_16_lift||b.inclusion-a.inclusion);
  if(query)cards=cards.filter(card=>normalize(card.name).includes(normalize(query)));
  cards=cards.slice(0,50);

@@ -8,11 +8,11 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="icons/domain-icons.css">
   <link rel="stylesheet" href="navigation.css">
-  <link rel="stylesheet" href="git-gud.css?v=2">
+  <link rel="stylesheet" href="git-gud.css?v=3">
   <link rel="stylesheet" href="theme.css?v=2">
   <script src="theme.js?v=2" defer></script>
   <script src="sidebar.js?v=1" defer></script>
-  <script src="git-gud.js?v=4" defer></script>
+  <script src="git-gud.js?v=5" defer></script>
 </head>
 <body class="gitgud-body">
 <div class="app">
@@ -47,7 +47,7 @@
 
           <div class="filter-section" data-gg-keyword-filter><div class="filter-label">Keyword · select one or more</div><div class="gg-domain-scope" id="ggDomainScope" hidden></div><div class="gg-keywords" id="ggKeywordFilters"></div><div class="domain-note">Multiple selections show cards with any selected keyword.</div></div>
           <div class="filter-section" data-gg-domain-filter><div class="filter-label">Domain · select one or more</div><div class="domain-grid" id="ggDomainFilters"></div><div class="domain-note">Multi-domain cards match when at least one selected domain applies.</div></div>
-          <div class="filter-section"><div class="filter-label">Energy cost</div><div class="gg-energy-range"><label>Minimum<select id="ggMinEnergy"></select></label><span>to</span><label>Maximum<select id="ggMaxEnergy"></select></label></div><label class="gg-check"><input id="ggNoCost" type="checkbox" checked> Include cards without an Energy cost</label><div class="domain-note">Set minimum and maximum to the same value for an exact cost.</div></div>
+          <div class="filter-section" data-gg-energy-filter><div class="filter-label">Energy cost</div><div class="gg-energy-range"><label>Minimum<select id="ggMinEnergy"></select></label><span>to</span><label>Maximum<select id="ggMaxEnergy"></select></label></div><label class="gg-check"><input id="ggNoCost" type="checkbox" checked> Include cards without an Energy cost</label><div class="domain-note">Set minimum and maximum to the same value for an exact cost.</div></div>
         </aside>
       </div>
     </section>

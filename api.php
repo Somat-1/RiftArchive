@@ -193,6 +193,8 @@ function compactCard($card, $id) {
         'set' => isset($card['set']) ? $card['set'] : array(),
         'attributes' => isset($card['attributes']) ? $card['attributes'] : array('energy' => null, 'might' => null, 'power' => null),
         'media' => array('image_url' => $image),
+        'tags' => isset($card['tags']) && is_array($card['tags']) ? $card['tags'] : array(),
+        'text' => isset($card['text']) && is_array($card['text']) ? $card['text'] : array(),
         'metadata' => isset($card['metadata']) ? $card['metadata'] : array(),
         'orientation' => isset($card['orientation']) ? $card['orientation'] : 'portrait'
     );

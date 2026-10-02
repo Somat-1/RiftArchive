@@ -3,6 +3,7 @@
 define('DOTGG_DECKS_URL', 'https://api.dotgg.gg/cgfw/getdecks');
 define('LEGEND_STATS_TTL', 21600);
 define('LEGEND_STATS_COOLDOWN', 600);
+define('LEGEND_STATS_PUBLIC_INTERVAL', 15);
 define('LEGEND_STATS_MAX_PAGES', 2);
 define('LEGEND_STATS_PAGE_SIZE', 30);
 
@@ -17,14 +18,19 @@ function handleLegendStatsGet() {
 }
 
 function handleLegendStatsRefresh() {
-    if (!isAdmin()) { sendJson(array('error' => 'authentication required'), 401); }
+    $adminRequest = isAdmin();
     $raw = @file_get_contents('php://input');
     if ($raw === false || strlen($raw) > 12000) { sendJson(array('error' => 'invalid payload'), 400); }
     $input = json_decode($raw, true);
     $id = lsLegendId(is_array($input) && isset($input['legend_id']) ? $input['legend_id'] : '');
     if ($id === '') { sendJson(array('error' => 'valid legend_id required'), 400); }
+    $cardMap = lsCardMap();
+    if (!isset($cardMap[$id]) || strtolower((string)$cardMap[$id]['type']) !== 'legend') {
+        sendJson(array('error' => 'legend_id is not present in the local Legend catalog'), 400);
+    }
     $name = is_array($input) && isset($input['legend_name']) ? trim(strip_tags((string)$input['legend_name'])) : $id;
     $name = substr($name, 0, 100);
+    if (!$adminRequest) { $name = $cardMap[$id]['name']; }
     $days = is_array($input) && isset($input['days']) ? (int)$input['days'] : 180;
     if (!in_array($days, array(30, 90, 180, 365), true)) { $days = 180; }
 
@@ -48,6 +54,22 @@ function handleLegendStatsRefresh() {
             sendJson($cached, 200);
         }
         sendJson(array('error' => 'Another statistics refresh is already running.'), 409);
+    }
+
+    if (!$adminRequest) {
+        $publicStampPath = CACHE_DIR . '/legend-stats-public-refresh.txt';
+        $lastPublicRefresh = is_file($publicStampPath) ? (int)@file_get_contents($publicStampPath) : 0;
+        $retryAfter = LEGEND_STATS_PUBLIC_INTERVAL - (time() - $lastPublicRefresh);
+        if ($retryAfter > 0) {
+            @flock($lock, LOCK_UN); @fclose($lock);
+            if ($cached !== null) {
+                $cached['cache']['throttled'] = true;
+                $cached['cache']['message'] = 'Public refresh limit active; serving the saved preview.';
+                sendJson($cached, 200);
+            }
+            sendJson(array('error' => 'Another public preview was just generated. Try again shortly.', 'retry_after' => $retryAfter), 429);
+        }
+        @file_put_contents($publicStampPath, (string)time(), LOCK_EX);
     }
 
     $result = lsFetchDeckSample($id, $days);
@@ -80,7 +102,20 @@ function lsCachePath($id) { return CACHE_DIR . '/legend-stats-' . strtolower(str
 function lsReadCache($path) {
     if (!is_file($path)) { return null; }
     $data = json_decode(@file_get_contents($path), true);
-    return is_array($data) && isset($data['cards']) && is_array($data['cards']) ? $data : null;
+    return is_array($data) && isset($data['cards']) && is_array($data['cards']) ? lsWithoutBattlefields($data) : null;
+}
+
+function lsWithoutBattlefields($payload) {
+    foreach (array('main', 'sideboard') as $board) {
+        if (!isset($payload['cards'][$board]) || !is_array($payload['cards'][$board])) { continue; }
+        $filtered = array();
+        foreach ($payload['cards'][$board] as $card) {
+            $type = strtolower(isset($card['type']) ? (string)$card['type'] : '');
+            if ($type !== 'battlefield') { $filtered[] = $card; }
+        }
+        $payload['cards'][$board] = $filtered;
+    }
+    return $payload;
 }
 
 function lsFetchDeckSample($legendId, $days) {
@@ -173,7 +208,7 @@ function lsCountCards(&$stats, $cards, $isTop, $legendId, $cardMap) {
         $seen[$id] = true;
         $card = isset($cardMap[$id]) ? $cardMap[$id] : lsUnknownCard($id);
         $type = strtolower(isset($card['type']) ? $card['type'] : '');
-        if ($type === 'legend' || $type === 'rune') { continue; }
+        if ($type === 'legend' || $type === 'rune' || $type === 'battlefield') { continue; }
         if (!isset($stats[$id])) {
             $stats[$id] = $card;
             $stats[$id]['deck_count'] = 0; $stats[$id]['copies'] = 0; $stats[$id]['top_deck_count'] = 0;

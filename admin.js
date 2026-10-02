@@ -1,5 +1,5 @@
 const API='https://api.riftcodex.com';
-const CATALOG_CACHE_KEY='riftarchive_catalog_cache_v1';
+const CATALOG_CACHE_KEY='riftarchive_catalog_cache_v2';
 const LANGUAGES={en:['English','GB'],fr:['French','FR'],de:['German','DE'],es:['Spanish','ES'],it:['Italian','IT'],pt:['Portuguese','PT'],pl:['Polish','PL'],ja:['Japanese','JP'],ko:['Korean','KR'],zh:['Chinese','CN']};
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
@@ -70,7 +70,7 @@ async function loadCatalog(){
       }
     }
     const seen=new Set();
-    catalog=all.filter(card=>{const key=card.riftbound_id||card.id;if(seen.has(key))return false;seen.add(key);return true}).map(card=>({name:card.name,riftbound_id:card.riftbound_id||card.id,collector_number:card.collector_number,classification:card.classification,set:card.set,attributes:card.attributes,media:{image_url:card.media?.image_url},metadata:card.metadata,orientation:card.orientation}));
+    catalog=all.filter(card=>{const key=card.riftbound_id||card.id;if(seen.has(key))return false;seen.add(key);return true}).map(card=>({name:card.name,riftbound_id:card.riftbound_id||card.id,collector_number:card.collector_number,classification:card.classification,set:card.set,attributes:card.attributes,media:{image_url:card.media?.image_url},metadata:card.metadata,orientation:card.orientation,tags:card.tags||[],text:card.text||null}));
     catalogReady=true;try{localStorage.setItem(CATALOG_CACHE_KEY,JSON.stringify({savedAt:Date.now(),cards:catalog}))}catch(cacheError){console.warn('Could not cache Riftcodex catalog',cacheError)}$('.catalog-status').classList.add('ready');$('#catalogStatus').textContent=`Riftcodex ready · ${catalog.length} printings`;
   }catch(error){if(!catalogReady){$('.catalog-status').classList.add('error');$('#catalogStatus').textContent='Riftcodex catalog unavailable · CSV import is waiting';$('#importStatus').textContent='The card catalog could not be loaded. Keep this page open and try Import cards again.'}console.error(error)}
   catalogLoading=false;if(catalogReady&&pendingCsvImport)importCollectionCsv($('#importInput').value);
@@ -83,7 +83,7 @@ function updateWorkingUI(){
   renderManage();renderSession();
 }
 
-$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));const mode=button.dataset.adminView,wideMode=mode==='play'||mode==='meta';$('.admin-main').classList.toggle('play-mode',wideMode);$('[data-admin-home]')?.classList.toggle('active',!wideMode);if(mode==='manage')renderManage();if(mode==='play')document.dispatchEvent(new CustomEvent('riftarchive:tracker-open'));if(mode==='meta')document.dispatchEvent(new CustomEvent('riftarchive:legend-stats-open'))}));
+$$('[data-admin-view]').forEach(button=>button.addEventListener('click',()=>{$$('[data-admin-view]').forEach(b=>b.classList.toggle('active',b===button));$$('.admin-view').forEach(view=>view.classList.toggle('active',view.id===button.dataset.adminView+'View'));const mode=button.dataset.adminView,wideMode=mode==='play';$('.admin-main').classList.toggle('play-mode',wideMode);$('[data-admin-home]')?.classList.toggle('active',!wideMode);if(mode==='manage')renderManage();if(mode==='play')document.dispatchEvent(new CustomEvent('riftarchive:tracker-open'))}));
 $('[data-admin-home]')?.addEventListener('click',()=>{$('[data-admin-view=single]').click();$('[data-admin-home]').classList.add('active')});
 
 $('#singleSearch').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(renderSearch,180)});

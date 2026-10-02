@@ -2,6 +2,7 @@ const GG_PAGE_SIZE=48;
 const GG_PARAMS=new URLSearchParams(location.search);
 const GG_EMBEDDED=GG_PARAMS.get('embed')==='1';
 const GG_PRESET_DOMAINS=GG_PARAMS.get('domains')?.split(',').map(value=>value.trim()).filter(Boolean)||[];
+const GG_CHAMPION_TAG=GG_PARAMS.get('champion')?.trim()||'';
 if(GG_EMBEDDED)document.body.classList.add('embedded');
 const GG_KEYWORDS=['Hidden','Action','Reaction','Ambush','Quick-Draw','Accelerate'];
 const GG_DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order'];
@@ -115,7 +116,7 @@ function applyPresetDomains(){
   const scope=$('#ggDomainScope');
   if(scope&&GG_PRESET_DOMAINS.length){
     scope.hidden=false;
-    scope.innerHTML=`<span>Matchup scope</span><strong>${GG_PRESET_DOMAINS.map(escapeHtml).join(' + ')}</strong>`;
+    scope.innerHTML=`<span>Matchup scope</span><strong>${GG_PRESET_DOMAINS.map(escapeHtml).join(' + ')}${GG_CHAMPION_TAG?` &middot; ${escapeHtml(GG_CHAMPION_TAG)} signatures`:''}</strong>`;
   }
 }
 
@@ -153,6 +154,7 @@ function getFilteredGitGud(){
 
   return ggCards.filter(card=>{
     if(query&&!normalize(card.name).includes(query))return false;
+    if(GG_EMBEDDED&&normalize(card.supertype)==='signature'&&(!GG_CHAMPION_TAG||!(card.tags||[]).some(tag=>normalize(tag)===normalize(GG_CHAMPION_TAG))))return false;
     if(activeKeywords.size&&!(card.keywords||[]).some(keyword=>activeKeywords.has(keyword)))return false;
     if(activeDomains.size&&!(card.domains||[]).some(domain=>activeDomains.has(domain)))return false;
     if(card.energy===null||card.energy===undefined)return min===null&&max===null&&includeNoCost;

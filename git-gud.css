@@ -91,3 +91,28 @@ html[data-theme=dark] .gitgud-body.embedded .gg-keyword.active{color:#fff;border
 html[data-theme=dark] .gitgud-body.embedded .gg-energy-range select,html[data-theme=dark] .gitgud-body.embedded .search-box input,html[data-theme=dark] .gitgud-body.embedded .filters select{color:#dbe7e0;border-color:#33483e;background:#0f1c17}
 html[data-theme=dark] .gitgud-body.embedded .gg-domain-scope{color:#b9d3c7;border-color:#365144;background:#192c23}
 html[data-theme=dark] .gitgud-body.embedded .gg-art{background:#23362c;box-shadow:0 8px 20px #0005}
+
+/* Compact matchup reference: keywords stay visible while the card list scrolls. */
+.gitgud-body.embedded{overflow:hidden}
+.gitgud-body.embedded .page{height:100vh;box-sizing:border-box}
+.gitgud-body.embedded .gg-layout{height:100%;min-height:0;gap:8px;overflow:hidden}
+.gitgud-body.embedded .gg-filters{position:sticky;top:0;z-index:20;flex:none;order:-1;width:auto;padding:8px 10px;box-shadow:none}
+.gitgud-body.embedded .gg-results{flex:1;min-height:0;padding:10px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.gitgud-body.embedded .search-box,
+.gitgud-body.embedded [data-gg-domain-filter],
+.gitgud-body.embedded [data-gg-energy-filter]{display:none}
+.gitgud-body.embedded .filters-title{position:absolute;top:8px;right:10px;z-index:2;margin:0}
+.gitgud-body.embedded .filters-title h3{display:none}
+.gitgud-body.embedded .clear-button{height:25px;padding:0 8px;font-size:7px}
+.gitgud-body.embedded [data-gg-keyword-filter]{margin:0;padding:0 62px 0 0;border:0}
+.gitgud-body.embedded [data-gg-keyword-filter] .filter-label,
+.gitgud-body.embedded [data-gg-keyword-filter] .domain-note{display:none}
+.gitgud-body.embedded .gg-domain-scope{display:inline-flex;align-items:center;gap:5px;margin:0 0 6px;padding:4px 7px;border-radius:6px;font-size:6px}
+.gitgud-body.embedded .gg-domain-scope span{font-size:6px}
+.gitgud-body.embedded .gg-keywords{grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.gitgud-body.embedded .gg-keyword{min-height:30px;padding:5px 4px;border-radius:6px;font-size:7px}
+.gitgud-body.embedded .gg-keyword em{font-size:6px}
+.gitgud-body.embedded .result-meta{position:sticky;top:-10px;z-index:12;margin:-10px -10px 9px;padding:8px 10px;background:var(--paper)}
+.gitgud-body.embedded .result-meta label{display:none}
+html[data-theme=dark] .gitgud-body.embedded .result-meta{background:#13221b}
+@media(max-width:700px){.gitgud-body.embedded .gg-keywords{grid-template-columns:repeat(3,minmax(0,1fr))}}
