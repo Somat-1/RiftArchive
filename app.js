@@ -1,5 +1,5 @@
 const PAGE_SIZE=50;
-const DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order'];
+const DOMAINS=['Body','Calm','Chaos','Colorless','Fury','Mind','Order','Misc'];
 const DOMAIN_ICONS={
   Body:'icons/RB_body_rune_icon.png',
   Calm:'icons/RB_calm_rune_icon.png',
@@ -9,6 +9,7 @@ const DOMAIN_ICONS={
   Order:'icons/RB_order_rune_icon.png'
 };
 const LANGUAGES={en:['English','GB'],fr:['French','FR'],de:['German','DE'],es:['Spanish','ES'],it:['Italian','IT'],pt:['Portuguese','PT'],pl:['Polish','PL'],ja:['Japanese','JP'],ko:['Korean','KR'],zh:['Chinese','CN']};
+const MISC_TYPES=new Set(['token','battlefield','rune']);
 const DECK_FORMAT=`Legend:
 1 Card Name
 
@@ -34,6 +35,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt
 const normalize=value=>String(value??'').toLowerCase().replace(/[’‘]/g,"'").replace(/\s*[-–—,]\s*/g,' ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
 const flag=(language='en')=>{const cc=(LANGUAGES[language]||LANGUAGES.en)[1];return [...cc].map(c=>String.fromCodePoint(127397+c.charCodeAt())).join('')};
 const languageName=code=>(LANGUAGES[code]||[code.toUpperCase()])[0];
+const isMiscCard=card=>MISC_TYPES.has(String(card?.type||'').toLowerCase())||String(card?.supertype||'').toLowerCase()==='token'||/\/\/\s*buff\b/i.test(String(card?.name||''));
 
 const domainIconStyles=document.createElement('link');
 domainIconStyles.rel='stylesheet';
@@ -92,17 +94,17 @@ function updateTotals(){
 }
 
 function buildTypeFilters(){
-  const counts=cards.reduce((map,card)=>{if(card.type!=='Rune')map[card.type]=(map[card.type]||0)+1;return map},{});
+  const counts=cards.reduce((map,card)=>{if(!isMiscCard(card))map[card.type]=(map[card.type]||0)+1;return map},{});
   $('#typeFilters').innerHTML=Object.keys(counts).sort().map(type=>`<label class="check-item"><input type="checkbox" value="${esc(type)}"><span>${esc(type)}</span><span>${counts[type]}</span></label>`).join('');
   $$('#typeFilters input').forEach(input=>input.addEventListener('change',()=>{input.checked?activeTypes.add(input.value):activeTypes.delete(input.value);page=1;renderCollection()}));
 }
 
 function buildDomainFilters(){
   const counts=cards.reduce((map,card)=>{(card.domains||[]).forEach(d=>map[d]=(map[d]||0)+1);return map},{});
-  $('#domainFilters').innerHTML=DOMAINS.map(domain=>`<button class="domain-button" type="button" data-domain="${domain}" aria-pressed="false"><em>${counts[domain]||0}</em><span class="domain-icon">${DOMAIN_ICONS[domain]}</span><span>${domain}</span></button>`).join('');
+  counts.Misc=cards.filter(isMiscCard).length;
   $('#domainFilters').innerHTML=DOMAINS.map(domain=>{
     const icon=DOMAIN_ICONS[domain];
-    const artwork=icon?`<img class='domain-icon' src='${esc(icon)}' alt=''>`:`<span class='domain-icon domain-icon-fallback' aria-hidden='true'>○</span>`;
+    const artwork=icon?`<img class='domain-icon' src='${esc(icon)}' alt=''>`:`<span class='domain-icon domain-icon-fallback' aria-hidden='true'>&bull;&bull;&bull;</span>`;
     return`<button class='domain-button' type='button' data-domain='${domain}' aria-pressed='false'><em>${counts[domain]||0}</em>${artwork}<span>${domain}</span></button>`;
   }).join('');
   $$('#domainFilters button').forEach(button=>button.addEventListener('click',()=>{const domain=button.dataset.domain;activeDomains.has(domain)?activeDomains.delete(domain):activeDomains.add(domain);button.classList.toggle('active',activeDomains.has(domain));button.setAttribute('aria-pressed',String(activeDomains.has(domain)));page=1;renderCollection()}));
@@ -110,11 +112,12 @@ function buildDomainFilters(){
 
 function getFiltered(){
   const query=normalize($('#cardSearch').value),sort=$('#sortSelect').value;
-  return cards.filter(card=>
-    (!query||normalize(card.name).includes(query))&&
-    (!activeTypes.size||activeTypes.has(card.type))&&
-    (!activeDomains.size||(card.domains||[]).some(domain=>activeDomains.has(domain)))
-  ).sort((a,b)=>{
+  const selectedDomains=new Set([...activeDomains].filter(domain=>domain!=='Misc')),miscSelected=activeDomains.has('Misc');
+  return cards.filter(card=>{
+    const misc=isMiscCard(card);
+    const scopeMatches=activeDomains.size?(misc&&miscSelected)||(!misc&&(card.domains||[]).some(domain=>selectedDomains.has(domain))):!misc;
+    return (!query||normalize(card.name).includes(query))&&(!activeTypes.size||activeTypes.has(card.type))&&scopeMatches;
+  }).sort((a,b)=>{
     if(sort==='quantity')return b.quantity-a.quantity||(randomOrder.get(a)-randomOrder.get(b));
     if(sort==='type')return a.type.localeCompare(b.type)||(randomOrder.get(a)-randomOrder.get(b));
     return randomOrder.get(a)-randomOrder.get(b);

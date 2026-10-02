@@ -9,7 +9,7 @@ const canonical=value=>String(value??'').replace(/\s*\((?:alternate art|overnumb
 const imageOf=card=>card?.media?.image_url||card?.image_url||'card-placeholder.svg';
 const typeOf=card=>String(card?.classification?.type||card?.type||'').toLowerCase();
 const dotId=card=>{const set=String(card?.set?.set_id||card?.set?.id||'').toUpperCase(),collector=Number(card?.collector_number);return set&&collector?`${set}-${String(collector).padStart(3,'0')}`:''};
-let booted=false,legends=[],selected='',payload=null,mode='popular',query='',busy=false,loadSequence=0;
+let booted=false,legends=[],selected='',payload=null,mode='popular',query='',busy=false,loadSequence=0,refreshController=null;
 
 document.addEventListener('riftarchive:legend-stats-open',boot);
 if(PUBLIC_MODE)boot();
@@ -23,9 +23,11 @@ async function boot(){
 }
 
 async function getCatalog(){
- for(let attempt=0;attempt<30;attempt++){
-  if(typeof catalog!=='undefined'&&Array.isArray(catalog)&&catalog.length)return catalog;
-  await new Promise(resolve=>setTimeout(resolve,200));
+ if(!PUBLIC_MODE){
+  for(let attempt=0;attempt<30;attempt++){
+   if(typeof catalog!=='undefined'&&Array.isArray(catalog)&&catalog.length)return catalog;
+   await new Promise(resolve=>setTimeout(resolve,200));
+  }
  }
  try{const response=await fetch('catalog.json',{cache:'no-store'});const data=await response.json();return Array.isArray(data.items)?data.items:[]}catch(error){return[]}
 }
@@ -34,7 +36,7 @@ function renderLoading(){ROOT.innerHTML='<div class="tracker-loading">Preparing 
 function renderShell(){
  ROOT.innerHTML=`<header class="meta-head"><div><div class="step-label">Tournament intelligence</div><h1>Legend meta lab</h1><p>Find the cards that define a Legend across recent, legal tournament decklists.</p></div><div class="meta-source">Cache-backed <span></span> DotGG</div></header>
  <section class="meta-picker"><header><div><div class="step-label">Choose a Legend</div><h2>Browse the field</h2><p>One representative artwork is shown for each Legend.</p></div><label class="meta-picker-search"><span>Find Legend</span><input data-meta-legend-search type="search" placeholder="Search Legends…" autocomplete="off"></label></header><div class="meta-legend-grid" data-meta-legend-grid>${legendPickerCards()}</div></section>
- <section class="meta-toolbar"><label>Sample window<select data-meta-days><option value="30">30 days</option><option value="90">90 days</option><option value="180" selected>180 days</option><option value="365">365 days</option></select></label><button class="meta-action" data-meta-refresh disabled>${PUBLIC_MODE?'Generate preview':'Refresh selected Legend'}</button></section>
+ <section class="meta-toolbar"><label>Sample window<select data-meta-days><option value="30">30 days</option><option value="90">90 days</option><option value="180" selected>180 days</option><option value="365">365 days</option></select></label><button class="meta-action" data-meta-refresh disabled>${PUBLIC_MODE?'Refresh analysis':'Refresh selected Legend'}</button></section>
  <div data-meta-content>${emptyState()}</div>`;
  ROOT.addEventListener('change',handleChange);ROOT.addEventListener('input',handleInput);ROOT.addEventListener('click',handleClick);
 }
@@ -50,7 +52,7 @@ function handleChange(){}
 function handleInput(event){if(event.target.matches('[data-meta-search]')){query=event.target.value;renderResults()}if(event.target.matches('[data-meta-legend-search]'))renderLegendPicker(event.target.value)}
 function handleClick(event){
  const button=event.target.closest('button');if(!button)return;
- if(button.matches('[data-meta-legend]')){selected=button.dataset.metaLegend;payload=null;mode='popular';query='';renderLegendPicker(ROOT.querySelector('[data-meta-legend-search]')?.value||'');const refreshButton=ROOT.querySelector('[data-meta-refresh]');if(refreshButton)refreshButton.disabled=false;loadCached();return}
+ if(button.matches('[data-meta-legend]')){refreshController?.abort();refreshController=null;busy=false;selected=button.dataset.metaLegend;payload=null;mode='popular';query='';renderLegendPicker(ROOT.querySelector('[data-meta-legend-search]')?.value||'');const refreshButton=ROOT.querySelector('[data-meta-refresh]');if(refreshButton)refreshButton.disabled=false;loadCached();return}
  if(button.matches('[data-meta-refresh]'))refresh();
  if(button.matches('[data-meta-mode]')){mode=button.dataset.metaMode;query='';renderResults()}
 }
@@ -58,18 +60,34 @@ function handleClick(event){
 async function loadCached(){
  const requested=selected,sequence=++loadSequence;
  setContentStatus('Loading the saved analysis&hellip;');
- try{const response=await fetch(`api.php?action=legend_stats&legend_id=${encodeURIComponent(requested)}`,{cache:'no-store'});const result=await response.json();if(sequence!==loadSequence||requested!==selected)return;if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);payload=result;syncDays();renderResults()}
- catch(error){if(sequence!==loadSequence||requested!==selected)return;ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty"><div class="meta-empty-mark">+</div><h2>No analysis cached yet</h2><p>${esc(error.message)} Generate a preview from recent tournament lists.</p><button class="meta-action" data-meta-refresh>Generate preview</button></section>`}
+ try{
+  const days=Number(ROOT.querySelector('[data-meta-days]')?.value||180),generate=PUBLIC_MODE?'&generate=1':'';
+  const response=await fetch(`api.php?action=legend_stats&legend_id=${encodeURIComponent(requested)}&days=${days}${generate}`,{cache:'no-store'}),result=await readApiResponse(response);
+  if(sequence!==loadSequence||requested!==selected)return;
+  if(!response.ok){
+   if(PUBLIC_MODE&&response.status===404&&result.cache_miss){setContentStatus('Building this Legend\'s first tournament preview&hellip;');refresh();return}
+   throw new Error(result.error||`HTTP ${response.status}`);
+  }
+  payload=result;syncDays();renderResults();
+ }catch(error){
+  if(sequence!==loadSequence||requested!==selected)return;
+  ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty"><div class="meta-empty-mark">+</div><h2>Analysis unavailable</h2><p>${esc(error.message)}</p><button class="meta-action" data-meta-refresh>Try again</button></section>`;
+ }
 }
 
 async function refresh(){
- if(!selected||busy)return;busy=true;const requested=selected,buttons=[...ROOT.querySelectorAll('[data-meta-refresh]')];buttons.forEach(button=>{button.disabled=true;button.textContent='Sampling tournament decks…'});setContentStatus('Contacting DotGG through the rate-limited server pipeline&hellip;');
- const legend=legends.find(card=>dotId(card)===requested),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),75000);
+ if(!selected)return;
+ refreshController?.abort();const requested=selected,sequence=++loadSequence,controller=new AbortController();refreshController=controller;busy=true;
+ const buttons=[...ROOT.querySelectorAll('[data-meta-refresh]')];buttons.forEach(button=>{button.disabled=true;button.textContent='Sampling tournament decks…'});setContentStatus('Contacting DotGG through the rate-limited server pipeline&hellip;');
+ const legend=legends.find(card=>dotId(card)===requested),timer=setTimeout(()=>controller.abort(),75000);
  try{
   const response=await fetch('api.php?action=legend_stats',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({legend_id:requested,legend_name:canonical(legend?.name||requested),days:Number(ROOT.querySelector('[data-meta-days]')?.value||180)}),signal:controller.signal});
-  const result=await response.json();if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);payload=result;syncDays();renderResults();
- }catch(error){ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty error"><div class="meta-empty-mark">!</div><h2>Preview unavailable</h2><p>${esc(error.name==='AbortError'?'The refresh timed out safely. Try again later.':error.message)}</p><button class="meta-action secondary" data-meta-refresh>Try again</button></section>`}
- finally{clearTimeout(timer);busy=false;ROOT.querySelectorAll('[data-meta-refresh]').forEach(button=>{button.disabled=false;button.textContent=PUBLIC_MODE?'Generate preview':'Refresh selected Legend'})}
+  const result=await readApiResponse(response);if(sequence!==loadSequence||requested!==selected)return;if(!response.ok)throw new Error(result.error||`HTTP ${response.status}`);payload=result;syncDays();renderResults();
+ }catch(error){if(sequence!==loadSequence||requested!==selected||error.name==='AbortError'&&refreshController!==controller)return;ROOT.querySelector('[data-meta-content]').innerHTML=`<section class="meta-empty error"><div class="meta-empty-mark">!</div><h2>Preview unavailable</h2><p>${esc(error.name==='AbortError'?'The refresh timed out safely. Try again later.':error.message)}</p><button class="meta-action secondary" data-meta-refresh>Try again</button></section>`}
+ finally{clearTimeout(timer);if(refreshController===controller){refreshController=null;busy=false;ROOT.querySelectorAll('[data-meta-refresh]').forEach(button=>{button.disabled=false;button.textContent=PUBLIC_MODE?'Refresh analysis':'Refresh selected Legend'})}}
+}
+async function readApiResponse(response){
+ const text=await response.text();try{return JSON.parse(text)}catch(error){throw new Error(text.trim().startsWith('<?php')?'This host is serving PHP as a static file, so live analytics cannot run here.':'The analytics service returned an invalid response.')}
 }
 function setContentStatus(message){ROOT.querySelector('[data-meta-content]').innerHTML=`<div class="tracker-loading">${message}</div>`}
 function syncDays(){const field=ROOT.querySelector('[data-meta-days]');if(field&&payload?.sample?.window_days)field.value=String(payload.sample.window_days)}
@@ -89,6 +107,7 @@ function renderTable(){
  const host=ROOT.querySelector('[data-meta-table]');if(!host||!payload)return;
  let cards=mode==='sideboard'?(payload.cards?.sideboard||[]):(payload.cards?.main||[]);
  cards=cards.filter(card=>String(card.type||'').toLowerCase()!=='battlefield');
+ if(mode==='popular')cards=cards.filter(card=>!(String(card.type||'').toLowerCase()==='unit'&&Number(card.energy)===2));
  if(mode==='performing')cards=cards.filter(card=>Number.isFinite(card.top_16_lift)&&card.top_deck_count>=2).slice().sort((a,b)=>b.top_16_lift-a.top_16_lift||b.inclusion-a.inclusion);
  if(query)cards=cards.filter(card=>normalize(card.name).includes(normalize(query)));
  cards=cards.slice(0,50);

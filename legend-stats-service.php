@@ -12,16 +12,24 @@ function handleLegendStatsGet() {
     if ($id === '') { sendJson(array('error' => 'valid legend_id required'), 400); }
     $path = lsCachePath($id);
     $cached = lsReadCache($path);
+    if ($cached === null && isset($_GET['generate']) && $_GET['generate'] === '1') {
+        $days = isset($_GET['days']) ? (int)$_GET['days'] : 180;
+        handleLegendStatsRefresh(array('legend_id' => $id, 'days' => $days));
+    }
     if ($cached === null) { sendJson(array('error' => 'No cached analysis for this Legend yet.', 'cache_miss' => true), 404); }
     $cached['cache']['stale'] = (time() - @filemtime($path)) > LEGEND_STATS_TTL;
     sendJson($cached, 200);
 }
 
-function handleLegendStatsRefresh() {
+function handleLegendStatsRefresh($overrideInput = null) {
     $adminRequest = isAdmin();
-    $raw = @file_get_contents('php://input');
-    if ($raw === false || strlen($raw) > 12000) { sendJson(array('error' => 'invalid payload'), 400); }
-    $input = json_decode($raw, true);
+    if (is_array($overrideInput)) {
+        $input = $overrideInput;
+    } else {
+        $raw = @file_get_contents('php://input');
+        if ($raw === false || strlen($raw) > 12000) { sendJson(array('error' => 'invalid payload'), 400); }
+        $input = json_decode($raw, true);
+    }
     $id = lsLegendId(is_array($input) && isset($input['legend_id']) ? $input['legend_id'] : '');
     if ($id === '') { sendJson(array('error' => 'valid legend_id required'), 400); }
     $cardMap = lsCardMap();
