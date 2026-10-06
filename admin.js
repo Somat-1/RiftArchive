@@ -32,6 +32,7 @@ async function unlock(){
   $('#loginGate').hidden=true;$('#adminShell').hidden=false;
   await loadDatabase();
   loadCatalog();
+  if(new URLSearchParams(location.search).get('view')==='play')$('[data-admin-view="play"]').click();
 }
 
 async function loadDatabase(){

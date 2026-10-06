@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Private Riftbound Epic card price and seller tracker.">
+  <title>Epic Market · Bindery Godmode</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="admin.css?v=6">
+  <link rel="stylesheet" href="theme.css?v=2">
+  <link rel="stylesheet" href="admin-modern.css?v=2">
+  <link rel="stylesheet" href="market.css?v=1">
+  <script src="theme.js?v=2" defer></script>
+  <script src="sidebar.js?v=1" defer></script>
+  <script src="market.js?v=1" defer></script>
+</head>
+<body class="admin-body market-body" data-default-theme="dark">
+  <section class="login-gate" id="loginGate">
+    <form class="login-card" id="loginForm">
+      <div class="brand-mark">B</div>
+      <div class="eyebrow">Restricted area</div>
+      <h1>Epic market</h1>
+      <p>Unlock Godmode to view Cardmarket prices and seller stock.</p>
+      <label>Password<input id="adminPassword" type="password" autocomplete="current-password" autofocus placeholder="Enter password"></label>
+      <button class="admin-primary" type="submit">Unlock Godmode</button>
+      <div class="login-error" id="loginError" role="status"></div>
+    </form>
+  </section>
+
+  <div class="admin-shell market-shell" id="marketShell" hidden>
+    <header class="admin-topbar">
+      <div class="brand"><div class="brand-mark">B</div><div><div class="brand-name">BINDERY</div><small class="brand-kicker">Private market intelligence</small></div></div>
+      <div class="catalog-status" id="marketStatus"><span></span><span>Loading Cardmarket guide…</span></div>
+      <div class="admin-actions"><a href="index.html">View collection</a><button id="refreshMarket" type="button">Refresh</button><button id="lockAdmin" type="button">Lock</button></div>
+    </header>
+
+    <nav class="admin-mode-nav" aria-label="Godmode areas">
+      <div class="nav-label">Godmode</div>
+      <a class="admin-mode-button" href="admin.html"><span class="admin-mode-icon">C</span><span><strong>Collection</strong><small>Add and manage cards</small></span></a>
+      <a class="admin-mode-button" href="admin.html?view=play"><span class="admin-mode-icon">D</span><span><strong>Decks &amp; games</strong><small>Build, play, and review</small></span></a>
+      <a class="admin-mode-button active" href="market.html" aria-current="page"><span class="admin-mode-icon">E</span><span><strong>Epic market</strong><small>Prices and seller stock</small></span></a>
+    </nav>
+
+    <main class="market-main">
+      <section class="market-hero">
+        <div>
+          <div class="eyebrow">Cardmarket · Riftbound</div>
+          <h1>Epic market radar</h1>
+          <p>Daily guide prices with live seller checks when you open a card.</p>
+        </div>
+        <div class="market-summary" aria-label="Market summary">
+          <div><strong id="visibleCount">0</strong><span>visible</span></div>
+          <div><strong id="belowCount">0</strong><span>below trend</span></div>
+          <div><strong id="guideAge">—</strong><span>guide age</span></div>
+        </div>
+      </section>
+
+      <section class="market-toolbar" aria-label="Epic card filters">
+        <div class="market-search-wrap">
+          <label for="marketSearch">Find a card</label>
+          <div class="market-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="marketSearch" type="search" placeholder="Search Epic cards…" autocomplete="off"></div>
+        </div>
+
+        <div class="price-filter">
+          <div class="filter-label"><span>Lowest offer range</span><output id="priceRangeLabel">€0 – €15</output></div>
+          <div class="range-fields">
+            <label>Min €<input id="priceMin" type="number" min="0" max="250" step="0.5" value="0" inputmode="decimal"></label>
+            <div class="dual-range" id="dualRange" style="--low:0%;--high:30%">
+              <div class="range-track"></div><div class="range-fill"></div>
+              <input id="priceMinRange" type="range" min="0" max="50" step="0.5" value="0" aria-label="Minimum price">
+              <input id="priceMaxRange" type="range" min="0" max="50" step="0.5" value="15" aria-label="Maximum price">
+            </div>
+            <label>Max €<input id="priceMax" type="number" min="0" max="250" step="0.5" value="15" inputmode="decimal"></label>
+          </div>
+          <div class="range-presets" aria-label="Price range presets">
+            <button type="button" data-range="0,5">€0–5</button>
+            <button type="button" data-range="0,10">€0–10</button>
+            <button type="button" data-range="5,10">€5–10</button>
+            <button type="button" data-range="10,15">€10–15</button>
+            <button type="button" data-range="0,50">All</button>
+          </div>
+        </div>
+
+        <label class="market-sort">Sort
+          <select id="marketSort">
+            <option value="low-asc">Lowest price</option>
+            <option value="discount">Best vs trend</option>
+            <option value="trend-desc">Highest trend</option>
+            <option value="name">Card name</option>
+          </select>
+        </label>
+      </section>
+
+      <div class="market-source-note"><span class="source-pulse"></span><span id="sourceNote">Daily prices come from Cardmarket’s official public guide. Seller rows are requested live only when expanded.</span></div>
+
+      <section class="market-list" aria-label="Epic cards">
+        <div class="market-list-head" aria-hidden="true"><span>Card</span><span>Lowest</span><span>Trend</span><span>7 days</span><span>30 days</span><span>Signal</span><span></span></div>
+        <div id="marketRows"><div class="market-loading"><span class="market-spinner"></span><strong>Reading the latest price guide</strong><small>Matching Epic printings to Cardmarket…</small></div></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
