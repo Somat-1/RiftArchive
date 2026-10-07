@@ -10,11 +10,14 @@ define('COLLECTION_FILE', CACHE_DIR . '/collection.json');
 define('TRACKER_FILE', CACHE_DIR . '/play-tracker.json');
 define('MARKET_CACHE_FILE', CACHE_DIR . '/cardmarket-market-cache.json');
 define('MARKET_HISTORY_FILE', CACHE_DIR . '/cardmarket-price-history.json');
+define('MARKET_ENGLISH_CACHE_FILE', CACHE_DIR . '/riftbound-zone-english-price-cache.json');
 define('MARKET_SHIPPING_FILE', dirname(__FILE__) . '/cardmarket_shipping_to_NL.csv');
 define('CACHE_TTL', 43200);
 define('MARKET_CACHE_TTL', 21600);
+define('MARKET_ENGLISH_CACHE_TTL', 86400);
 define('CARDMARKET_GUIDE_URL', 'https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_22.json');
 define('RIFTBOUND_MARKET_MAP_URL', 'https://api.dotgg.gg/cgfw/getcards?game=riftbound');
+define('RIFTBOUND_ZONE_PRICES_URL', 'https://riftbound.zone/wp-admin/admin-ajax.php?action=rbz_prezzi_tiles&lang=en&q=&rarity=&set=&sort=&page=');
 require_once dirname(__FILE__) . '/legend-stats-service.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -139,8 +142,126 @@ function handleMarketPrices() {
     $force = isset($_GET['refresh']) && $_GET['refresh'] === '1';
     $dataset = getMarketDataset($force);
     if ($dataset === null) { sendJson(array('error' => 'Cardmarket price guide is temporarily unavailable'), 502); }
+    $dataset = applyEnglishMarketPrices($dataset, getEnglishMarketPrices($force));
     $dataset['shipping'] = getMarketShippingRates();
     sendJson($dataset, 200);
+}
+
+function applyEnglishMarketPrices($dataset, $englishDataset) {
+    $records = is_array($englishDataset) && isset($englishDataset['prices']) && is_array($englishDataset['prices']) ? $englishDataset['prices'] : array();
+    $matched = 0;
+    if (!isset($dataset['cards']) || !is_array($dataset['cards'])) { return $dataset; }
+    foreach ($dataset['cards'] as $index => $card) {
+        if (!isset($dataset['cards'][$index]['price']) || !is_array($dataset['cards'][$index]['price'])) { $dataset['cards'][$index]['price'] = array(); }
+        $guideLow = isset($dataset['cards'][$index]['price']['guide_low']) ? $dataset['cards'][$index]['price']['guide_low'] : (isset($dataset['cards'][$index]['price']['low']) ? $dataset['cards'][$index]['price']['low'] : null);
+        $dataset['cards'][$index]['price']['guide_low'] = $guideLow;
+        $dataset['cards'][$index]['price']['low'] = null;
+        $dataset['cards'][$index]['price']['low_language'] = 'English';
+        $dataset['cards'][$index]['price']['low_source'] = null;
+        $code = isset($card['id']) ? strtoupper(trim((string)$card['id'])) : '';
+        $name = isset($card['name']) ? (string)$card['name'] : '';
+        $match = matchEnglishPriceRecord($records, $code, $name);
+        if ($match === null) { continue; }
+        $dataset['cards'][$index]['price']['low'] = round((float)$match['price'], 2);
+        $dataset['cards'][$index]['price']['low_source'] = 'Riftbound Zone';
+        $matched++;
+    }
+    $available = is_array($englishDataset) && count($records) > 0;
+    $dataset['english_prices'] = array(
+        'available' => $available,
+        'matched' => $matched,
+        'total' => count($dataset['cards']),
+        'updated_at' => $available && isset($englishDataset['updated_at']) ? $englishDataset['updated_at'] : null,
+        'cached' => $available && !empty($englishDataset['cached']),
+        'stale' => $available && !empty($englishDataset['stale']),
+        'source' => 'Riftbound Zone Cardmarket EN minimum',
+        'url' => 'https://riftbound.zone/en/prices/?market=eu'
+    );
+    $dataset['source'] = $available ? 'Cardmarket public price guide + Riftbound Zone EN minimum' : 'Cardmarket public price guide; English minimum unavailable';
+    return $dataset;
+}
+
+function matchEnglishPriceRecord($records, $code, $name) {
+    if ($code === '' || !isset($records[$code]) || !is_array($records[$code]) || count($records[$code]) === 0) { return null; }
+    $candidates = $records[$code];
+    if (count($candidates) === 1) { return isset($candidates[0]['price']) && is_numeric($candidates[0]['price']) ? $candidates[0] : null; }
+    $wanted = normalizeMarketName($name);
+    foreach ($candidates as $candidate) {
+        if (isset($candidate['name']) && normalizeMarketName($candidate['name']) === $wanted && isset($candidate['price']) && is_numeric($candidate['price'])) { return $candidate; }
+    }
+    return null;
+}
+
+function normalizeMarketName($name) {
+    $value = html_entity_decode((string)$name, ENT_QUOTES, 'UTF-8');
+    $value = function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    $value = preg_replace('/[^a-z0-9]+/', ' ', $value);
+    return trim(preg_replace('/\s+/', ' ', $value));
+}
+
+function getEnglishMarketPrices($force) {
+    $cached = readJsonFile(MARKET_ENGLISH_CACHE_FILE);
+    if (!$force && is_array($cached) && isset($cached['prices']) && is_array($cached['prices']) && is_file(MARKET_ENGLISH_CACHE_FILE) && (time() - @filemtime(MARKET_ENGLISH_CACHE_FILE)) < MARKET_ENGLISH_CACHE_TTL) {
+        $cached['cached'] = true; $cached['stale'] = false; return $cached;
+    }
+    $fresh = fetchEnglishMarketPrices();
+    if ($fresh !== null) {
+        ensureDataDir(); writeJsonFile(MARKET_ENGLISH_CACHE_FILE, $fresh);
+        $fresh['cached'] = false; $fresh['stale'] = false; return $fresh;
+    }
+    if (is_array($cached) && isset($cached['prices']) && is_array($cached['prices'])) {
+        $cached['cached'] = true; $cached['stale'] = true; return $cached;
+    }
+    return null;
+}
+
+function fetchEnglishMarketPrices() {
+    $firstRaw = httpGet(RIFTBOUND_ZONE_PRICES_URL . '1');
+    if ($firstRaw === false) { return null; }
+    $first = json_decode($firstRaw, true);
+    if (!is_array($first) || empty($first['success']) || !isset($first['data']) || !is_array($first['data']) || !isset($first['data']['html'])) { return null; }
+    $shown = isset($first['data']['shown']) ? max(0, (int)$first['data']['shown']) : 0;
+    $pageSize = max(1, substr_count((string)$first['data']['html'], '<article class="pc-tile'));
+    $pages = $shown > 0 ? (int)ceil($shown / $pageSize) : 1;
+    $pages = max(1, min(30, $pages));
+    $responses = array($firstRaw);
+    $urls = array();
+    for ($page = 2; $page <= $pages; $page++) { $urls[] = RIFTBOUND_ZONE_PRICES_URL . $page; }
+    $remaining = httpGetMany($urls, 4);
+    if ($remaining === false || count($remaining) !== count($urls)) { return null; }
+    $responses = array_merge($responses, $remaining);
+    $records = array();
+    foreach ($responses as $raw) {
+        $payload = json_decode($raw, true);
+        if (!is_array($payload) || empty($payload['success']) || !isset($payload['data']['html'])) { return null; }
+        extractEnglishPricesFromHtml((string)$payload['data']['html'], $records);
+    }
+    if (count($records) === 0) { return null; }
+    return array(
+        'updated_at' => gmdate('c'),
+        'source' => 'Riftbound Zone Cardmarket EN minimum',
+        'source_url' => 'https://riftbound.zone/en/prices/?market=eu',
+        'prices' => $records
+    );
+}
+
+function extractEnglishPricesFromHtml($html, &$records) {
+    if (!preg_match_all('/<article\b[^>]*class="[^"]*\bpc-tile\b[^"]*"[^>]*>.*?<\/article>/is', $html, $articles)) { return; }
+    foreach ($articles[0] as $article) {
+        if (!preg_match('/\bdata-en="([0-9]+(?:\.[0-9]+)?)"/i', $article, $priceMatch)) { continue; }
+        $price = (float)$priceMatch[1];
+        if ($price <= 0) { continue; }
+        if (!preg_match('/class="[^"]*\bpc-set-badge\b[^"]*"[^>]*>(.*?)<\/span>/is', $article, $codeMatch)) { continue; }
+        $code = strtoupper(trim(strip_tags(html_entity_decode($codeMatch[1], ENT_QUOTES, 'UTF-8'))));
+        if ($code === '' || !preg_match('/^[A-Z0-9]+(?:-[A-Z0-9*]+)+$/', $code)) { continue; }
+        $name = '';
+        if (preg_match('/class="[^"]*\bpc-name-text\b[^"]*"[^>]*>(.*?)<\/span>/is', $article, $nameMatch)) {
+            $name = trim(strip_tags(html_entity_decode($nameMatch[1], ENT_QUOTES, 'UTF-8')));
+        }
+        $record = array('name' => $name, 'price' => round($price, 2));
+        if (!isset($records[$code])) { $records[$code] = array(); }
+        $records[$code][] = $record;
+    }
 }
 
 function getMarketDataset($force) {

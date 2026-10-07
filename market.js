@@ -51,8 +51,12 @@
     try{
       const payload=await api('api.php?action=market_prices'+(force?'&refresh=1':''));
       state.cards=Array.isArray(payload.cards)?payload.cards:[];state.shipping=Array.isArray(payload.shipping)&&payload.shipping.length?payload.shipping:fallbackShipping;state.updatedAt=payload.updated_at||null;state.source=payload.source||'Cardmarket';
-      status.classList.add('ready');status.lastElementChild.textContent=(payload.stale?'Cached guide':'Guide ready')+' · '+state.cards.length+' Epic printings';
-      $('#sourceNote').textContent=(payload.stale?'Using the most recent cached Cardmarket guide. ':'Prices come from Cardmarket’s official daily guide. ')+'Bargains use the daily low plus your selected shipping estimate; seller country, language, and availability are not verified.';
+      const english=payload.english_prices||{},englishCount=Number(english.matched)||0;
+      status.classList.add('ready');status.lastElementChild.textContent=(english.stale?'Cached English prices':english.available?'English prices ready':'English prices unavailable')+' · '+englishCount+'/'+state.cards.length+' Epic printings';
+      $('#sourceNote').textContent=english.available
+        ?'Lowest offers are English-only Cardmarket minima from EU-27 sellers, supplied by Riftbound Zone and cached daily. Cards without a verified English minimum are omitted. Trend and 7/30-day averages come from Cardmarket’s official all-language guide.'
+        :'The English-only price source is unavailable, so no all-language lowest prices are being shown. Trend and averages remain Cardmarket all-language guide values.';
+      state.updatedAt=english.updated_at||payload.updated_at||null;
       render();
     }catch(error){
       status.classList.add('error');status.lastElementChild.textContent='Price guide unavailable';
@@ -103,7 +107,7 @@
     $('#allCount').textContent=state.cards.length;$('#bargainCount').textContent=bargainCount;
     $('#bargainSettings').hidden=state.view!=='bargains';
     const rate=selectedShipping();$('#shippingEstimate').textContent=rate?money(rate.untracked_20g)+' from '+rate.country+' · '+(rate.tariff_year||'current')+' table':'Shipping estimate unavailable';
-    $('#marketListHead').innerHTML=state.view==='bargains'?'<span>Card</span><span>Listing</span><span>Shipping</span><span>Total cost</span><span>Reference</span><span>Net margin</span>':'<span>Card</span><span>Lowest</span><span>Trend</span><span>7 days</span><span>30 days</span><span>Signal</span>';
+    $('#marketListHead').innerHTML=state.view==='bargains'?'<span>Card</span><span>English listing</span><span>Shipping</span><span>Total cost</span><span>Reference</span><span>Net margin</span>':'<span>Card</span><span>Lowest EN</span><span>Trend*</span><span>7 days*</span><span>30 days*</span><span>Signal</span>';
     const empty=state.view==='bargains'?'<div class="market-empty"><strong>No bargains meet this margin</strong><small>Try another shipping origin, lower the minimum margin, or widen the listing-price range.</small></div>':'<div class="market-empty"><strong>No Epic cards in this range</strong><small>Adjust the price bounds or clear the card search.</small></div>';
     $('#marketRows').innerHTML=cards.length?cards.map(cardRow).join(''):empty;
   }
@@ -114,10 +118,10 @@
     return '<article class="market-item" data-market-id="'+esc(card.id_product)+'">'+
       '<div class="market-card-row">'+
         '<div class="market-card"><div class="card-thumb-wrap" tabindex="0"><img class="card-thumb" src="'+esc(card.image_url||'card-placeholder.svg')+'" alt="'+esc(card.name)+'" loading="lazy" decoding="async"></div><div class="market-card-copy"><a href="'+esc(card.product_url)+'" target="_blank" rel="noopener noreferrer">'+esc(card.name)+'</a><small>'+esc(card.set_name||'Riftbound')+' · Epic</small></div></div>'+
-        '<div class="price-cell primary '+(good?'below':'')+'"><strong>'+money(low)+'</strong><small>daily low</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.trend)+'</strong><small>market trend</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.avg7)+'</strong><small>average</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.avg30)+'</strong><small>average</small></div>'+
+        '<div class="price-cell primary '+(good?'below':'')+'"><strong>'+money(low)+'</strong><small>English minimum</small></div>'+
+        '<div class="price-cell"><strong>'+money(card.price.trend)+'</strong><small>all-language trend</small></div>'+
+        '<div class="price-cell"><strong>'+money(card.price.avg7)+'</strong><small>all-language average</small></div>'+
+        '<div class="price-cell"><strong>'+money(card.price.avg30)+'</strong><small>all-language average</small></div>'+
         '<span class="trend-chip '+(good?'good':high?'high':'')+'">'+esc(signalText)+'</span>'+
       '</div></article>';
   }
@@ -126,10 +130,10 @@
     const marginDetail='7d '+signedMoney(metrics.margin7)+' · 30d '+signedMoney(metrics.margin30);
     return '<article class="market-item bargain-item" data-market-id="'+esc(card.id_product)+'"><div class="market-card-row">'+
       '<div class="market-card"><div class="card-thumb-wrap" tabindex="0"><img class="card-thumb" src="'+esc(card.image_url||'card-placeholder.svg')+'" alt="'+esc(card.name)+'" loading="lazy" decoding="async"></div><div class="market-card-copy"><a href="'+esc(card.product_url)+'" target="_blank" rel="noopener noreferrer">'+esc(card.name)+'</a><small>'+esc(card.set_name||'Riftbound')+' · Epic</small></div></div>'+
-      '<div class="price-cell primary"><strong>'+money(numericPrice(card))+'</strong><small>daily low</small></div>'+
+      '<div class="price-cell primary"><strong>'+money(numericPrice(card))+'</strong><small>English minimum</small></div>'+
       '<div class="price-cell"><strong>'+money(metrics.shipping.amount)+'</strong><small>'+esc(metrics.shipping.method)+'</small></div>'+
-      '<div class="price-cell total-cost"><strong>'+money(metrics.total)+'</strong><small>low + shipping</small></div>'+
-      '<div class="price-cell"><strong>'+money(metrics.referenceValue)+'</strong><small>'+esc(metrics.reference)+' average</small></div>'+
+      '<div class="price-cell total-cost"><strong>'+money(metrics.total)+'</strong><small>EN low + shipping</small></div>'+
+      '<div class="price-cell"><strong>'+money(metrics.referenceValue)+'</strong><small>'+esc(metrics.reference)+' all-language avg</small></div>'+
       '<div class="margin-cell"><strong>'+signedMoney(metrics.best)+'</strong><small>'+esc(marginDetail)+'</small></div>'+
     '</div></article>';
   }
