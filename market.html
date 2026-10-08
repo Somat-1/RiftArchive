@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="market.css?v=2">
   <script src="theme.js?v=2" defer></script>
   <script src="sidebar.js?v=1" defer></script>
-  <script src="market.js?v=3" defer></script>
+  <script src="market.js?v=4" defer></script>
 </head>
 <body class="admin-body market-body" data-default-theme="dark">
   <section class="login-gate" id="loginGate">
@@ -46,12 +46,12 @@
         <div>
           <div class="eyebrow">Cardmarket · Riftbound</div>
           <h1>Epic market radar</h1>
-          <p>English-only Cardmarket minima with shipping-adjusted bargain signals—no paid scraper required.</p>
+          <p>English-only Cardmarket floor history with shipping-adjusted bargain signals—no paid scraper required.</p>
         </div>
         <div class="market-summary" aria-label="Market summary">
           <div><strong id="visibleCount">0</strong><span>visible</span></div>
-          <div><strong id="signalCount">0</strong><span id="signalLabel">below trend</span></div>
-          <div><strong id="guideAge">—</strong><span>guide age</span></div>
+          <div><strong id="signalCount">0</strong><span id="signalLabel">below EN average</span></div>
+          <div><strong id="guideAge">—</strong><span>price age</span></div>
         </div>
       </section>
 
@@ -106,19 +106,19 @@
         <label class="market-sort">Sort
           <select id="marketSort">
             <option value="low-asc">Lowest price</option>
-            <option value="discount">Best vs trend</option>
+            <option value="discount">Best vs EN average</option>
             <option value="margin-desc">Best net margin</option>
-            <option value="trend-desc">Highest trend</option>
+            <option value="avg30-desc">Highest 30d EN average</option>
             <option value="name">Card name</option>
           </select>
         </label>
       </section>
 
-      <div class="market-source-note"><span class="source-pulse"></span><span id="sourceNote">Loading English-only Cardmarket minima and the official daily price guide.</span></div>
+      <div class="market-source-note"><span class="source-pulse"></span><span id="sourceNote">Loading English-only Cardmarket floor history.</span></div>
 
       <section class="market-list" aria-label="Epic cards">
-        <div class="market-list-head" id="marketListHead" aria-hidden="true"><span>Card</span><span>Lowest</span><span>Trend</span><span>7 days</span><span>30 days</span><span>Signal</span></div>
-        <div id="marketRows"><div class="market-loading"><span class="market-spinner"></span><strong>Reading the latest price guide</strong><small>Matching Epic printings to Cardmarket…</small></div></div>
+        <div class="market-list-head" id="marketListHead" aria-hidden="true"><span>Card</span><span>Lowest EN</span><span>7d EN avg</span><span>30d EN avg</span><span>7d move</span><span>Signal</span></div>
+        <div id="marketRows"><div class="market-loading"><span class="market-spinner"></span><strong>Reading English price history</strong><small>Matching Epic printings and daily Cardmarket floors…</small></div></div>
       </section>
     </main>
   </div>

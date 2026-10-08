@@ -17,6 +17,7 @@
   function numberValue(value){if(value==null||value==='')return null;const number=Number(value);return Number.isFinite(number)?number:null}
   function money(value){const number=numberValue(value);return number==null?'—':formatter.format(number)}
   function signedMoney(value){const number=numberValue(value);return number==null?'—':(number>=0?'+':'−')+money(Math.abs(number))}
+  function signedPercent(value){const number=numberValue(value);return number==null?'—':(number>0?'+':'')+number.toFixed(1)+'%'}
   function toast(message){const node=$('#toast');node.textContent=message;node.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove('show'),2600)}
   async function api(url,options){
     const response=await fetch(url,Object.assign({cache:'no-store'},options||{}));
@@ -45,17 +46,17 @@
   function unlock(){$('#loginGate').hidden=true;$('#marketShell').hidden=false;loadMarket(false)}
 
   async function loadMarket(force){
-    const status=$('#marketStatus');status.classList.remove('ready','error');status.lastElementChild.textContent='Loading Cardmarket guide…';
+    const status=$('#marketStatus');status.classList.remove('ready','error');status.lastElementChild.textContent='Loading English price history…';
     $('#refreshMarket').disabled=true;
-    if(!state.cards.length)$('#marketRows').innerHTML='<div class="market-loading"><span class="market-spinner"></span><strong>Reading the latest price guide</strong><small>Matching Epic printings to Cardmarket…</small></div>';
+    if(!state.cards.length)$('#marketRows').innerHTML='<div class="market-loading"><span class="market-spinner"></span><strong>Reading English price history</strong><small>Matching Epic printings and daily Cardmarket floors…</small></div>';
     try{
       const payload=await api('api.php?action=market_prices'+(force?'&refresh=1':''));
       state.cards=Array.isArray(payload.cards)?payload.cards:[];state.shipping=Array.isArray(payload.shipping)&&payload.shipping.length?payload.shipping:fallbackShipping;state.updatedAt=payload.updated_at||null;state.source=payload.source||'Cardmarket';
-      const english=payload.english_prices||{},englishCount=Number(english.matched)||0;
-      status.classList.add('ready');status.lastElementChild.textContent=(english.stale?'Cached English prices':english.available?'English prices ready':'English prices unavailable')+' · '+englishCount+'/'+state.cards.length+' Epic printings';
-      $('#sourceNote').textContent=english.available
-        ?'Lowest offers are English-only Cardmarket minima from EU-27 sellers, supplied by Riftbound Zone and cached daily. Cards without a verified English minimum are omitted. Trend and 7/30-day averages come from Cardmarket’s official all-language guide.'
-        :'The English-only price source is unavailable, so no all-language lowest prices are being shown. Trend and averages remain Cardmarket all-language guide values.';
+      const english=payload.english_prices||{},englishCount=Number(english.matched)||0,historyCount=Number(english.history_matched)||0;
+      status.classList.add('ready');status.lastElementChild.textContent=(english.stale?'Cached English history':english.available?'English history ready':'English prices unavailable')+' · '+historyCount+'/'+englishCount+' histories';
+      $('#sourceNote').innerHTML=english.available
+        ?'Lowest, 7-day and 30-day values are calculated from daily English Cardmarket floors for EU-27 sellers, supplied by <a href="https://riftbound.zone/en/prices/?market=eu" target="_blank" rel="noopener noreferrer">Riftbound Zone</a> and cached daily. These are listing-floor averages, not completed-sale averages; daily snapshots are also archived locally.'
+        :'The English-only price source is unavailable, so no mixed-language fallback values are being shown.';
       state.updatedAt=english.updated_at||payload.updated_at||null;
       render();
     }catch(error){
@@ -65,7 +66,8 @@
   }
 
   function numericPrice(card){return numberValue(card.price&&card.price.low)}
-  function signal(card){const low=numericPrice(card),trend=numberValue(card.price&&card.price.trend);return low!=null&&trend!=null&&trend>0?(low-trend)/trend:null}
+  function historyReference(card){const avg30=numberValue(card.price&&card.price.avg30),avg7=numberValue(card.price&&card.price.avg7);return avg30!=null?{value:avg30,label:'30d'}:avg7!=null?{value:avg7,label:'7d'}:null}
+  function signal(card){const low=numericPrice(card),reference=historyReference(card);return low!=null&&reference&&reference.value>0?(low-reference.value)/reference.value:null}
   function selectedShipping(){return state.shipping.find(rate=>rate.code===state.shippingCode)||state.shipping[0]||null}
   function shippingFor(card){
     const low=numericPrice(card),rate=selectedShipping();if(low==null||!rate)return null;
@@ -79,7 +81,7 @@
     const margin7=avg7==null?null:avg7-total,margin30=avg30==null?null:avg30-total;
     if(margin7==null&&margin30==null)return null;
     const use30=margin30!=null&&(margin7==null||margin30>=margin7),best=use30?margin30:margin7;
-    return{shipping:shipping,total:total,margin7:margin7,margin30:margin30,best:best,reference:use30?'30d':'7d',referenceValue:use30?avg30:avg7};
+    return{shipping:shipping,total:total,margin7:margin7,margin30:margin30,best:best,reference:use30?'30d EN floor':'7d EN floor',referenceValue:use30?avg30:avg7};
   }
   function baseFilteredCards(){
     const query=$('#marketSearch').value.trim().toLowerCase(),min=state.min,max=state.max;
@@ -90,7 +92,7 @@
     const cards=baseFilteredCards().filter(card=>state.view!=='bargains'||(bargainMetrics(card)&&bargainMetrics(card).best>=state.minProfit));
     cards.sort((a,b)=>{
       if(sort==='name')return a.name.localeCompare(b.name);
-      if(sort==='trend-desc'){const at=numberValue(a.price.trend),bt=numberValue(b.price.trend);return(bt==null?-1:bt)-(at==null?-1:at)}
+      if(sort==='avg30-desc'){const at=numberValue(a.price.avg30),bt=numberValue(b.price.avg30);return(bt==null?-1:bt)-(at==null?-1:at)}
       if(sort==='margin-desc'){const am=bargainMetrics(a),bm=bargainMetrics(b);return(bm?bm.best:-999999)-(am?am.best:-999999)}
       if(sort==='discount')return(signal(a)==null?999:signal(a))-(signal(b)==null?999:signal(b));
       return(numericPrice(a)==null?999999:numericPrice(a))-(numericPrice(b)==null?999999:numericPrice(b));
@@ -102,38 +104,38 @@
     const bargainCount=baseFilteredCards().filter(card=>{const metrics=bargainMetrics(card);return metrics&&metrics.best>=state.minProfit}).length;
     $('#visibleCount').textContent=cards.length;
     $('#signalCount').textContent=state.view==='bargains'?bargainCount:cards.filter(card=>signal(card)!=null&&signal(card)<0).length;
-    $('#signalLabel').textContent=state.view==='bargains'?'best bargains':'below trend';
+    $('#signalLabel').textContent=state.view==='bargains'?'best bargains':'below EN average';
     $('#guideAge').textContent=ageLabel(state.updatedAt);
     $('#allCount').textContent=state.cards.length;$('#bargainCount').textContent=bargainCount;
     $('#bargainSettings').hidden=state.view!=='bargains';
     const rate=selectedShipping();$('#shippingEstimate').textContent=rate?money(rate.untracked_20g)+' from '+rate.country+' · '+(rate.tariff_year||'current')+' table':'Shipping estimate unavailable';
-    $('#marketListHead').innerHTML=state.view==='bargains'?'<span>Card</span><span>English listing</span><span>Shipping</span><span>Total cost</span><span>Reference</span><span>Net margin</span>':'<span>Card</span><span>Lowest EN</span><span>Trend*</span><span>7 days*</span><span>30 days*</span><span>Signal</span>';
+    $('#marketListHead').innerHTML=state.view==='bargains'?'<span>Card</span><span>English listing</span><span>Shipping</span><span>Total cost</span><span>Reference</span><span>Net margin</span>':'<span>Card</span><span>Lowest EN</span><span>7d EN avg</span><span>30d EN avg</span><span>7d move</span><span>Signal</span>';
     const empty=state.view==='bargains'?'<div class="market-empty"><strong>No bargains meet this margin</strong><small>Try another shipping origin, lower the minimum margin, or widen the listing-price range.</small></div>':'<div class="market-empty"><strong>No Epic cards in this range</strong><small>Adjust the price bounds or clear the card search.</small></div>';
     $('#marketRows').innerHTML=cards.length?cards.map(cardRow).join(''):empty;
   }
   function cardRow(card){
     if(state.view==='bargains')return bargainRow(card);
-    const low=numericPrice(card),delta=signal(card),good=delta!=null&&delta<0,high=delta!=null&&delta>0.08;
-    const signalText=delta==null?'No signal':(delta<0?'↓ ':'↑ ')+Math.abs(delta*100).toFixed(0)+'% vs trend';
+    const low=numericPrice(card),delta=signal(card),reference=historyReference(card),move7=numberValue(card.price&&card.price.change7),good=delta!=null&&delta<0,high=delta!=null&&delta>0.08;
+    const signalText=delta==null?'Building history':(delta<0?'↓ ':'↑ ')+Math.abs(delta*100).toFixed(0)+'% vs '+reference.label+' EN avg';
     return '<article class="market-item" data-market-id="'+esc(card.id_product)+'">'+
       '<div class="market-card-row">'+
         '<div class="market-card"><div class="card-thumb-wrap" tabindex="0"><img class="card-thumb" src="'+esc(card.image_url||'card-placeholder.svg')+'" alt="'+esc(card.name)+'" loading="lazy" decoding="async"></div><div class="market-card-copy"><a href="'+esc(card.product_url)+'" target="_blank" rel="noopener noreferrer">'+esc(card.name)+'</a><small>'+esc(card.set_name||'Riftbound')+' · Epic</small></div></div>'+
         '<div class="price-cell primary '+(good?'below':'')+'"><strong>'+money(low)+'</strong><small>English minimum</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.trend)+'</strong><small>all-language trend</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.avg7)+'</strong><small>all-language average</small></div>'+
-        '<div class="price-cell"><strong>'+money(card.price.avg30)+'</strong><small>all-language average</small></div>'+
+        '<div class="price-cell"><strong>'+money(card.price.avg7)+'</strong><small>daily-floor average</small></div>'+
+        '<div class="price-cell"><strong>'+money(card.price.avg30)+'</strong><small>daily-floor average</small></div>'+
+        '<div class="price-cell"><strong>'+signedPercent(move7)+'</strong><small>English floor</small></div>'+
         '<span class="trend-chip '+(good?'good':high?'high':'')+'">'+esc(signalText)+'</span>'+
       '</div></article>';
   }
   function bargainRow(card){
     const metrics=bargainMetrics(card);if(!metrics)return'';
-    const marginDetail='7d '+signedMoney(metrics.margin7)+' · 30d '+signedMoney(metrics.margin30);
+    const marginDetail='7d EN '+signedMoney(metrics.margin7)+' · 30d EN '+signedMoney(metrics.margin30);
     return '<article class="market-item bargain-item" data-market-id="'+esc(card.id_product)+'"><div class="market-card-row">'+
       '<div class="market-card"><div class="card-thumb-wrap" tabindex="0"><img class="card-thumb" src="'+esc(card.image_url||'card-placeholder.svg')+'" alt="'+esc(card.name)+'" loading="lazy" decoding="async"></div><div class="market-card-copy"><a href="'+esc(card.product_url)+'" target="_blank" rel="noopener noreferrer">'+esc(card.name)+'</a><small>'+esc(card.set_name||'Riftbound')+' · Epic</small></div></div>'+
       '<div class="price-cell primary"><strong>'+money(numericPrice(card))+'</strong><small>English minimum</small></div>'+
       '<div class="price-cell"><strong>'+money(metrics.shipping.amount)+'</strong><small>'+esc(metrics.shipping.method)+'</small></div>'+
       '<div class="price-cell total-cost"><strong>'+money(metrics.total)+'</strong><small>EN low + shipping</small></div>'+
-      '<div class="price-cell"><strong>'+money(metrics.referenceValue)+'</strong><small>'+esc(metrics.reference)+' all-language avg</small></div>'+
+      '<div class="price-cell"><strong>'+money(metrics.referenceValue)+'</strong><small>'+esc(metrics.reference)+' avg</small></div>'+
       '<div class="margin-cell"><strong>'+signedMoney(metrics.best)+'</strong><small>'+esc(marginDetail)+'</small></div>'+
     '</div></article>';
   }

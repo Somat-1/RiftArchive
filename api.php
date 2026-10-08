@@ -11,6 +11,7 @@ define('TRACKER_FILE', CACHE_DIR . '/play-tracker.json');
 define('MARKET_CACHE_FILE', CACHE_DIR . '/cardmarket-market-cache.json');
 define('MARKET_HISTORY_FILE', CACHE_DIR . '/cardmarket-price-history.json');
 define('MARKET_ENGLISH_CACHE_FILE', CACHE_DIR . '/riftbound-zone-english-price-cache.json');
+define('MARKET_ENGLISH_HISTORY_FILE', CACHE_DIR . '/english-price-history.json');
 define('MARKET_SHIPPING_FILE', dirname(__FILE__) . '/cardmarket_shipping_to_NL.csv');
 define('CACHE_TTL', 43200);
 define('MARKET_CACHE_TTL', 21600);
@@ -142,20 +143,32 @@ function handleMarketPrices() {
     $force = isset($_GET['refresh']) && $_GET['refresh'] === '1';
     $dataset = getMarketDataset($force);
     if ($dataset === null) { sendJson(array('error' => 'Cardmarket price guide is temporarily unavailable'), 502); }
-    $dataset = applyEnglishMarketPrices($dataset, getEnglishMarketPrices($force));
+    $englishDataset = getEnglishMarketPrices($force, $dataset['cards']);
+    $dataset = applyEnglishMarketPrices($dataset, $englishDataset);
+    recordEnglishMarketHistory($dataset);
     $dataset['shipping'] = getMarketShippingRates();
     sendJson($dataset, 200);
 }
 
 function applyEnglishMarketPrices($dataset, $englishDataset) {
     $records = is_array($englishDataset) && isset($englishDataset['prices']) && is_array($englishDataset['prices']) ? $englishDataset['prices'] : array();
-    $matched = 0;
+    $localMetrics = getLocalEnglishHistoryMetrics();
+    $matched = 0; $historyMatched = 0;
     if (!isset($dataset['cards']) || !is_array($dataset['cards'])) { return $dataset; }
     foreach ($dataset['cards'] as $index => $card) {
         if (!isset($dataset['cards'][$index]['price']) || !is_array($dataset['cards'][$index]['price'])) { $dataset['cards'][$index]['price'] = array(); }
-        $guideLow = isset($dataset['cards'][$index]['price']['guide_low']) ? $dataset['cards'][$index]['price']['guide_low'] : (isset($dataset['cards'][$index]['price']['low']) ? $dataset['cards'][$index]['price']['low'] : null);
-        $dataset['cards'][$index]['price']['guide_low'] = $guideLow;
+        $guide = $dataset['cards'][$index]['price'];
+        $dataset['cards'][$index]['price']['guide_low'] = isset($guide['guide_low']) ? $guide['guide_low'] : (isset($guide['low']) ? $guide['low'] : null);
+        $dataset['cards'][$index]['price']['guide_trend'] = isset($guide['guide_trend']) ? $guide['guide_trend'] : (isset($guide['trend']) ? $guide['trend'] : null);
+        $dataset['cards'][$index]['price']['guide_avg7'] = isset($guide['guide_avg7']) ? $guide['guide_avg7'] : (isset($guide['avg7']) ? $guide['avg7'] : null);
+        $dataset['cards'][$index]['price']['guide_avg30'] = isset($guide['guide_avg30']) ? $guide['guide_avg30'] : (isset($guide['avg30']) ? $guide['avg30'] : null);
         $dataset['cards'][$index]['price']['low'] = null;
+        $dataset['cards'][$index]['price']['trend'] = null;
+        $dataset['cards'][$index]['price']['avg7'] = null;
+        $dataset['cards'][$index]['price']['avg30'] = null;
+        $dataset['cards'][$index]['price']['change7'] = null;
+        $dataset['cards'][$index]['price']['history_days'] = 0;
+        $dataset['cards'][$index]['price']['history_updated_at'] = null;
         $dataset['cards'][$index]['price']['low_language'] = 'English';
         $dataset['cards'][$index]['price']['low_source'] = null;
         $code = isset($card['id']) ? strtoupper(trim((string)$card['id'])) : '';
@@ -164,20 +177,30 @@ function applyEnglishMarketPrices($dataset, $englishDataset) {
         if ($match === null) { continue; }
         $dataset['cards'][$index]['price']['low'] = round((float)$match['price'], 2);
         $dataset['cards'][$index]['price']['low_source'] = 'Riftbound Zone';
+        $metrics = isset($match['history']) && is_array($match['history']) ? $match['history'] : (isset($localMetrics[$code]) ? $localMetrics[$code] : null);
+        if (is_array($metrics)) {
+            $dataset['cards'][$index]['price']['avg7'] = isset($metrics['avg7']) ? $metrics['avg7'] : null;
+            $dataset['cards'][$index]['price']['avg30'] = isset($metrics['avg30']) ? $metrics['avg30'] : null;
+            $dataset['cards'][$index]['price']['change7'] = isset($metrics['change7']) ? $metrics['change7'] : null;
+            $dataset['cards'][$index]['price']['history_days'] = isset($metrics['history_days']) ? (int)$metrics['history_days'] : 0;
+            $dataset['cards'][$index]['price']['history_updated_at'] = isset($metrics['updated_at']) ? $metrics['updated_at'] : null;
+            if ($dataset['cards'][$index]['price']['avg7'] !== null || $dataset['cards'][$index]['price']['avg30'] !== null) { $historyMatched++; }
+        }
         $matched++;
     }
     $available = is_array($englishDataset) && count($records) > 0;
     $dataset['english_prices'] = array(
         'available' => $available,
         'matched' => $matched,
+        'history_matched' => $historyMatched,
         'total' => count($dataset['cards']),
         'updated_at' => $available && isset($englishDataset['updated_at']) ? $englishDataset['updated_at'] : null,
         'cached' => $available && !empty($englishDataset['cached']),
         'stale' => $available && !empty($englishDataset['stale']),
-        'source' => 'Riftbound Zone Cardmarket EN minimum',
+        'source' => 'Riftbound Zone Cardmarket EN minimum and daily history',
         'url' => 'https://riftbound.zone/en/prices/?market=eu'
     );
-    $dataset['source'] = $available ? 'Cardmarket public price guide + Riftbound Zone EN minimum' : 'Cardmarket public price guide; English minimum unavailable';
+    $dataset['source'] = $available ? 'Riftbound Zone English Cardmarket floor and history' : 'English Cardmarket pricing unavailable';
     return $dataset;
 }
 
@@ -199,23 +222,24 @@ function normalizeMarketName($name) {
     return trim(preg_replace('/\s+/', ' ', $value));
 }
 
-function getEnglishMarketPrices($force) {
+function getEnglishMarketPrices($force, $marketCards) {
     $cached = readJsonFile(MARKET_ENGLISH_CACHE_FILE);
-    if (!$force && is_array($cached) && isset($cached['prices']) && is_array($cached['prices']) && is_file(MARKET_ENGLISH_CACHE_FILE) && (time() - @filemtime(MARKET_ENGLISH_CACHE_FILE)) < MARKET_ENGLISH_CACHE_TTL) {
+    $cacheValid = is_array($cached) && isset($cached['schema_version']) && (int)$cached['schema_version'] >= 2 && isset($cached['prices']) && is_array($cached['prices']);
+    if (!$force && $cacheValid && is_file(MARKET_ENGLISH_CACHE_FILE) && (time() - @filemtime(MARKET_ENGLISH_CACHE_FILE)) < MARKET_ENGLISH_CACHE_TTL) {
         $cached['cached'] = true; $cached['stale'] = false; return $cached;
     }
-    $fresh = fetchEnglishMarketPrices();
+    $fresh = fetchEnglishMarketPrices($marketCards);
     if ($fresh !== null) {
         ensureDataDir(); writeJsonFile(MARKET_ENGLISH_CACHE_FILE, $fresh);
         $fresh['cached'] = false; $fresh['stale'] = false; return $fresh;
     }
-    if (is_array($cached) && isset($cached['prices']) && is_array($cached['prices'])) {
+    if ($cacheValid) {
         $cached['cached'] = true; $cached['stale'] = true; return $cached;
     }
     return null;
 }
 
-function fetchEnglishMarketPrices() {
+function fetchEnglishMarketPrices($marketCards) {
     $firstRaw = httpGet(RIFTBOUND_ZONE_PRICES_URL . '1');
     if ($firstRaw === false) { return null; }
     $first = json_decode($firstRaw, true);
@@ -237,10 +261,13 @@ function fetchEnglishMarketPrices() {
         extractEnglishPricesFromHtml((string)$payload['data']['html'], $records);
     }
     if (count($records) === 0) { return null; }
+    $historyRecords = enrichEnglishPriceHistories($records, $marketCards);
     return array(
+        'schema_version' => 2,
         'updated_at' => gmdate('c'),
-        'source' => 'Riftbound Zone Cardmarket EN minimum',
+        'source' => 'Riftbound Zone Cardmarket EN minimum and daily history',
         'source_url' => 'https://riftbound.zone/en/prices/?market=eu',
+        'history_records' => $historyRecords,
         'prices' => $records
     );
 }
@@ -258,10 +285,124 @@ function extractEnglishPricesFromHtml($html, &$records) {
         if (preg_match('/class="[^"]*\bpc-name-text\b[^"]*"[^>]*>(.*?)<\/span>/is', $article, $nameMatch)) {
             $name = trim(strip_tags(html_entity_decode($nameMatch[1], ENT_QUOTES, 'UTF-8')));
         }
-        $record = array('name' => $name, 'price' => round($price, 2));
+        $historyUrl = null;
+        if (preg_match('/class="[^"]*\bpc-tile-link\b[^"]*"[^>]*href="([^"]+)"/is', $article, $hrefMatch)) {
+            $href = html_entity_decode($hrefMatch[1], ENT_QUOTES, 'UTF-8');
+            $codePattern = preg_quote(strtolower($code), '#');
+            if (preg_match('#/prices/' . $codePattern . '-([0-9]+)(?:-[^/]*)?/?#i', $href, $pathMatch)) {
+                $historyUrl = 'https://riftbound.zone/wp-json/rbz/v1/hist/cm/' . rawurlencode($code) . '/' . (int)$pathMatch[1] . '?lang=eng&range=month';
+            }
+        }
+        $record = array('name' => $name, 'price' => round($price, 2), 'history_url' => $historyUrl);
         if (!isset($records[$code])) { $records[$code] = array(); }
         $records[$code][] = $record;
     }
+}
+
+function enrichEnglishPriceHistories(&$records, $marketCards) {
+    if (!is_array($marketCards)) { return 0; }
+    $jobs = array();
+    foreach ($marketCards as $card) {
+        $code = isset($card['id']) ? strtoupper(trim((string)$card['id'])) : '';
+        $name = isset($card['name']) ? (string)$card['name'] : '';
+        if ($code === '' || !isset($records[$code]) || !is_array($records[$code])) { continue; }
+        $wanted = normalizeMarketName($name); $selected = null;
+        foreach ($records[$code] as $candidateIndex => $candidate) {
+            if (count($records[$code]) === 1 || (isset($candidate['name']) && normalizeMarketName($candidate['name']) === $wanted)) { $selected = $candidateIndex; break; }
+        }
+        if ($selected === null || empty($records[$code][$selected]['history_url'])) { continue; }
+        $jobs[] = array('code' => $code, 'index' => $selected, 'url' => $records[$code][$selected]['history_url']);
+    }
+    $enriched = 0;
+    foreach (array_chunk($jobs, 20) as $batch) {
+        $urls = array(); foreach ($batch as $job) { $urls[] = $job['url']; }
+        $responses = httpGetMany($urls, 4);
+        if ($responses === false || count($responses) !== count($batch)) {
+            $responses = array(); foreach ($batch as $job) { $responses[] = httpGet($job['url']); }
+        }
+        foreach ($batch as $offset => $job) {
+            $raw = isset($responses[$offset]) ? $responses[$offset] : false;
+            $metrics = parseEnglishHistoryMetrics($raw);
+            if ($metrics === null) { continue; }
+            $records[$job['code']][$job['index']]['history'] = $metrics;
+            $enriched++;
+        }
+    }
+    return $enriched;
+}
+
+function parseEnglishHistoryMetrics($raw) {
+    if ($raw === false || $raw === '') { return null; }
+    $payload = json_decode($raw, true);
+    if (!is_array($payload) || !isset($payload['skus']) || !is_array($payload['skus'])) { return null; }
+    $points = null;
+    foreach ($payload['skus'] as $sku) {
+        if (is_array($sku) && isset($sku['variant']) && $sku['variant'] === 'eu' && isset($sku['pts']) && is_array($sku['pts'])) { $points = $sku['pts']; break; }
+    }
+    if ($points === null && isset($payload['skus'][0]['pts']) && is_array($payload['skus'][0]['pts'])) { $points = $payload['skus'][0]['pts']; }
+    return $points === null ? null : calculateEnglishHistoryMetrics($points);
+}
+
+function calculateEnglishHistoryMetrics($points) {
+    $series = array();
+    foreach ($points as $point) {
+        if (!is_array($point) || !isset($point['d']) || !isset($point['p']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$point['d']) || !is_numeric($point['p']) || (float)$point['p'] <= 0) { continue; }
+        $series[(string)$point['d']] = (float)$point['p'];
+    }
+    if (count($series) < 2) { return null; }
+    ksort($series);
+    $dates = array_keys($series); $endDate = $dates[count($dates) - 1]; $startDate = $dates[0];
+    $endStamp = strtotime($endDate . ' 00:00:00 UTC'); $startStamp = strtotime($startDate . ' 00:00:00 UTC');
+    if ($endStamp === false || $startStamp === false) { return null; }
+    $values7 = array(); $values30 = array(); $cutoff7 = $endStamp - (6 * 86400); $cutoff30 = $endStamp - (29 * 86400);
+    foreach ($series as $date => $price) {
+        $stamp = strtotime($date . ' 00:00:00 UTC');
+        if ($stamp === false) { continue; }
+        if ($stamp >= $cutoff7) { $values7[] = $price; }
+        if ($stamp >= $cutoff30) { $values30[] = $price; }
+    }
+    $spanDays = (int)floor(($endStamp - $startStamp) / 86400) + 1;
+    $avg7 = $spanDays >= 6 && count($values7) >= 4 ? round(array_sum($values7) / count($values7), 2) : null;
+    $avg30 = $spanDays >= 28 && count($values30) >= 20 ? round(array_sum($values30) / count($values30), 2) : null;
+    $change7 = null;
+    if (count($values7) >= 2 && $values7[0] > 0) { $change7 = round((($values7[count($values7) - 1] - $values7[0]) / $values7[0]) * 100, 1); }
+    return array('avg7' => $avg7, 'avg30' => $avg30, 'change7' => $change7, 'samples7' => count($values7), 'samples30' => count($values30), 'history_days' => $spanDays, 'updated_at' => $endDate);
+}
+
+function recordEnglishMarketHistory($dataset) {
+    if (!isset($dataset['cards']) || !is_array($dataset['cards']) || !isset($dataset['english_prices']['available']) || !$dataset['english_prices']['available']) { return; }
+    $date = isset($dataset['english_prices']['updated_at']) ? substr((string)$dataset['english_prices']['updated_at'], 0, 10) : gmdate('Y-m-d');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $date = gmdate('Y-m-d'); }
+    $history = readJsonFile(MARKET_ENGLISH_HISTORY_FILE);
+    if (!is_array($history) || !isset($history['snapshots']) || !is_array($history['snapshots'])) { $history = array('schema_version' => 1, 'snapshots' => array()); }
+    $points = array();
+    foreach ($dataset['cards'] as $card) {
+        $low = isset($card['price']['low']) && is_numeric($card['price']['low']) ? (float)$card['price']['low'] : null;
+        if ($low === null || $low <= 0 || empty($card['id'])) { continue; }
+        $points[] = array('id' => strtoupper((string)$card['id']), 'low' => round($low, 2));
+    }
+    $replacement = array('date' => $date, 'cards' => $points); $updated = false;
+    foreach ($history['snapshots'] as $index => $snapshot) {
+        if (isset($snapshot['date']) && $snapshot['date'] === $date) { $history['snapshots'][$index] = $replacement; $updated = true; break; }
+    }
+    if (!$updated) { $history['snapshots'][] = $replacement; }
+    if (count($history['snapshots']) > 120) { $history['snapshots'] = array_slice($history['snapshots'], -120); }
+    $history['updated_at'] = gmdate('c'); writeJsonFile(MARKET_ENGLISH_HISTORY_FILE, $history);
+}
+
+function getLocalEnglishHistoryMetrics() {
+    $history = readJsonFile(MARKET_ENGLISH_HISTORY_FILE); $series = array(); $metrics = array();
+    if (!is_array($history) || !isset($history['snapshots']) || !is_array($history['snapshots'])) { return $metrics; }
+    foreach ($history['snapshots'] as $snapshot) {
+        if (!isset($snapshot['date']) || !isset($snapshot['cards']) || !is_array($snapshot['cards'])) { continue; }
+        foreach ($snapshot['cards'] as $card) {
+            if (empty($card['id']) || !isset($card['low']) || !is_numeric($card['low'])) { continue; }
+            $code = strtoupper((string)$card['id']); if (!isset($series[$code])) { $series[$code] = array(); }
+            $series[$code][] = array('d' => $snapshot['date'], 'p' => (float)$card['low']);
+        }
+    }
+    foreach ($series as $code => $points) { $value = calculateEnglishHistoryMetrics($points); if ($value !== null) { $metrics[$code] = $value; } }
+    return $metrics;
 }
 
 function getMarketDataset($force) {
