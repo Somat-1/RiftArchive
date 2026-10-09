@@ -75,7 +75,81 @@ function handleCollectionGet() {
     if (!is_array($payload) || !isset($payload['cards']) || !is_array($payload['cards'])) {
         sendJson(array('error' => 'collection unavailable'), 500);
     }
+    $payload = repairImportedVariantArtwork($payload);
     sendJson($payload, 200);
+}
+
+function canonicalVariantNumber($value) {
+    $value = strtolower(preg_replace('/\s+/', '', trim((string)$value)));
+    return preg_replace('/-(?:foil|normal|standard)$/i', '', $value);
+}
+
+function catalogVariantNumber($card) {
+    $id = isset($card['riftbound_id']) ? canonicalVariantNumber($card['riftbound_id']) : '';
+    return preg_replace('/-\d+$/', '', $id);
+}
+
+function importedVariantNumber($card) {
+    if (isset($card['import_reference']) && is_array($card['import_reference']) && isset($card['import_reference']['variant_number'])) {
+        return canonicalVariantNumber($card['import_reference']['variant_number']);
+    }
+    return '';
+}
+
+function catalogVersionLabel($card, $fallback) {
+    $metadata = isset($card['metadata']) && is_array($card['metadata']) ? $card['metadata'] : array();
+    if (!empty($metadata['alternate_art'])) { return 'Alternate Art'; }
+    if (!empty($metadata['overnumbered'])) { return 'Overnumbered'; }
+    if (!empty($metadata['signature'])) { return 'Signature'; }
+    if (isset($card['name']) && preg_match('/\(Metal\)$/i', $card['name'])) { return 'Metal'; }
+    if (isset($card['classification']['rarity']) && strcasecmp($card['classification']['rarity'], 'Promo') === 0) { return 'Promo'; }
+    return $fallback !== '' ? $fallback : 'Standard';
+}
+
+function repairImportedVariantArtwork($payload) {
+    if (!isset($payload['cards']) || !is_array($payload['cards'])) { return $payload; }
+    $wanted = array();
+    foreach ($payload['cards'] as $card) {
+        $variant = importedVariantNumber($card);
+        if ($variant !== '') { $wanted[$variant] = true; }
+    }
+    if (count($wanted) === 0) { return $payload; }
+
+    $bundledCatalogPath = dirname(__FILE__) . '/catalog.json';
+    $catalogPath = is_file(CACHE_FILE) && (!is_file($bundledCatalogPath) || filemtime(CACHE_FILE) >= filemtime($bundledCatalogPath)) ? CACHE_FILE : $bundledCatalogPath;
+    $catalogPayload = json_decode(@file_get_contents($catalogPath), true);
+    if (!is_array($catalogPayload) || !isset($catalogPayload['items']) || !is_array($catalogPayload['items'])) { return $payload; }
+    $printings = array();
+    foreach ($catalogPayload['items'] as $catalogCard) {
+        $variant = catalogVariantNumber($catalogCard);
+        if ($variant !== '' && isset($wanted[$variant]) && !isset($printings[$variant])) { $printings[$variant] = $catalogCard; }
+    }
+
+    foreach ($payload['cards'] as $index => $record) {
+        $variant = importedVariantNumber($record);
+        if ($variant === '' || !isset($printings[$variant])) { continue; }
+        $catalogCard = $printings[$variant];
+        $classification = isset($catalogCard['classification']) && is_array($catalogCard['classification']) ? $catalogCard['classification'] : array();
+        $set = isset($catalogCard['set']) && is_array($catalogCard['set']) ? $catalogCard['set'] : array();
+        $metadata = isset($catalogCard['metadata']) && is_array($catalogCard['metadata']) ? $catalogCard['metadata'] : array();
+        $fallbackLabel = isset($record['version']['label']) ? (string)$record['version']['label'] : '';
+        $payload['cards'][$index]['riftbound_id'] = isset($catalogCard['riftbound_id']) ? $catalogCard['riftbound_id'] : $record['riftbound_id'];
+        if (isset($catalogCard['media']['image_url']) && $catalogCard['media']['image_url'] !== '') { $payload['cards'][$index]['image_url'] = $catalogCard['media']['image_url']; }
+        if (isset($catalogCard['orientation'])) { $payload['cards'][$index]['orientation'] = $catalogCard['orientation']; }
+        if (isset($classification['type'])) { $payload['cards'][$index]['type'] = $classification['type']; }
+        $payload['cards'][$index]['supertype'] = isset($classification['supertype']) ? $classification['supertype'] : null;
+        if (isset($classification['rarity'])) { $payload['cards'][$index]['rarity'] = $classification['rarity']; }
+        if (isset($classification['domain']) && is_array($classification['domain'])) { $payload['cards'][$index]['domains'] = array_values(array_unique($classification['domain'])); }
+        if (isset($set['set_id'])) { $payload['cards'][$index]['set'] = array('id' => $set['set_id'], 'label' => isset($set['label']) ? $set['label'] : $set['set_id']); }
+        if (isset($catalogCard['attributes']) && is_array($catalogCard['attributes'])) { $payload['cards'][$index]['attributes'] = $catalogCard['attributes']; }
+        $payload['cards'][$index]['version'] = array(
+            'label' => catalogVersionLabel($catalogCard, $fallbackLabel),
+            'alternate_art' => !empty($metadata['alternate_art']),
+            'overnumbered' => !empty($metadata['overnumbered']),
+            'signature' => !empty($metadata['signature'])
+        );
+    }
+    return $payload;
 }
 
 function handleCollectionSave() {

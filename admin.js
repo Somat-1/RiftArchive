@@ -249,7 +249,11 @@ function csvImportItems(text){
   }).filter(item=>item.name&&item.variantNumber);
 }
 function collectorKey(value){const raw=String(value??'').trim().toUpperCase();return /^\d+$/.test(raw)?String(Number(raw)):raw.replace(/^0+(?=\d)/,'')}
+function canonicalVariantNumber(value){return String(value??'').trim().toLowerCase().replace(/\s+/g,'').replace(/-(?:foil|normal|standard)$/i,'')}
+function catalogVariantNumber(card){return canonicalVariantNumber(card?.riftbound_id).replace(/-\d+$/,'')}
 function csvVersions(item){
+  const variantNumber=canonicalVariantNumber(item.variantNumber),byPrinting=catalog.filter(card=>catalogVariantNumber(card)===variantNumber);
+  if(byPrinting.length)return byPrinting;
   const [numberPrefix,...numberParts]=item.variantNumber.split('-'),prefixes=[item.setPrefix,numberPrefix].filter(Boolean).map(value=>value.toUpperCase()),collector=collectorKey(numberParts[0]);
   const exact=catalog.filter(card=>prefixes.includes(String(card.set?.set_id||'').toUpperCase())&&collectorKey(card.collector_number)===collector);
   if(exact.length)return exact;
